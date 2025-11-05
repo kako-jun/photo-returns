@@ -26,6 +26,7 @@ serde_json = "1"
 # y4m2d2からのコア機能用依存関係
 anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.8"  # タイムゾーン対応
 kamadak-exif = "0.6"
 image = "0.24"
 thiserror = "1.0"
