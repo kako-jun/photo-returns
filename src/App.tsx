@@ -18,6 +18,8 @@ interface MediaInfo {
   new_name: string;
   new_path: string;
   file_size: number;
+  burst_group_id: number | null;
+  burst_index: number | null;
   progress?: number; // 進捗（0-100）
   status?: "pending" | "processing" | "completed" | "error";
   error_message?: string;
@@ -118,8 +120,8 @@ function App() {
         includeVideos: true,
         parallel: true,
         timezoneOffset: null,
-        cleanupTemp: false,
-        autoCorrectOrientation: false,
+        cleanupTemp: true,
+        autoCorrectOrientation: true,
       });
 
       setProcessResult(result);

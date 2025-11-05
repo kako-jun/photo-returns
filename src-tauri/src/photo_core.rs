@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use walkdir::WalkDir;
 
+use crate::burst::{detect_burst_groups, BurstDetectorConfig};
+
 /// 処理オプション
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessOptions {
@@ -57,6 +59,10 @@ pub struct MediaInfo {
     pub new_name: String,
     pub new_path: PathBuf,
     pub file_size: u64,
+    /// バーストグループID（連続撮影グループ）
+    pub burst_group_id: Option<usize>,
+    /// バーストグループ内のインデックス（1始まり）
+    pub burst_index: Option<usize>,
 }
 
 /// 処理結果
@@ -199,6 +205,8 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
                     new_name,
                     new_path: PathBuf::new(),
                     file_size,
+                    burst_group_id: None,
+                    burst_index: None,
                 };
 
                 media.lock().unwrap().push(info);
@@ -212,9 +220,37 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
         files.iter().for_each(processor);
     }
 
-    let result = Arc::try_unwrap(media)
+    let mut result = Arc::try_unwrap(media)
         .map(|mutex| mutex.into_inner().unwrap())
         .unwrap_or_else(|arc| arc.lock().unwrap().clone());
+
+    // バースト検出を実行
+    let dates: Vec<Option<DateTime<Local>>> = result.iter().map(|m| m.date_taken).collect();
+    let burst_config = BurstDetectorConfig::default();
+    let burst_groups = detect_burst_groups(&dates, &burst_config);
+
+    // バースト情報をMediaInfoに反映
+    for group in &burst_groups {
+        for (idx, &photo_idx) in group.photo_indices.iter().enumerate() {
+            if let Some(media_info) = result.get_mut(photo_idx) {
+                media_info.burst_group_id = Some(group.id);
+                media_info.burst_index = Some(idx + 1); // 1始まり
+
+                // ファイル名に連番を追加
+                if let Some(date) = media_info.date_taken {
+                    let extension = media_info.original_path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("jpg");
+                    media_info.new_name = format!("{}_{:02}.{}",
+                        format_filename(&date, "").trim_end_matches('.'),
+                        idx + 1,
+                        extension
+                    );
+                }
+            }
+        }
+    }
 
     Ok(result)
 }
