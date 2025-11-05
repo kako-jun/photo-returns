@@ -151,7 +151,13 @@ function App() {
     columnHelper.accessor("media_type", {
       header: "Type",
       cell: (info) => (
-        <span className={`badge ${info.getValue() === "Photo" ? "photo" : "video"}`}>
+        <span
+          className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
+            info.getValue() === "Photo"
+              ? "bg-blue-500 text-white"
+              : "bg-purple-600 text-white"
+          }`}
+        >
           {info.getValue()}
         </span>
       ),
@@ -164,7 +170,7 @@ function App() {
     }),
     columnHelper.accessor("new_name", {
       header: "New Name",
-      cell: (info) => <span className="new-name">{info.getValue()}</span>,
+      cell: (info) => <span className="font-mono text-green-600 dark:text-green-400 font-semibold">{info.getValue()}</span>,
       size: 200,
     }),
     columnHelper.accessor("date_taken", {
@@ -189,7 +195,17 @@ function App() {
       header: "Status",
       cell: (info) => {
         const status = info.getValue() || "pending";
-        return <span className={`status ${status}`}>{status}</span>;
+        const statusColors = {
+          pending: "bg-orange-500 text-white",
+          processing: "bg-blue-500 text-white",
+          completed: "bg-green-600 text-white",
+          error: "bg-red-600 text-white",
+        };
+        return (
+          <span className={`inline-block px-2 py-1 rounded text-xs font-semibold uppercase ${statusColors[status]}`}>
+            {status}
+          </span>
+        );
       },
       size: 100,
     }),
@@ -199,13 +215,21 @@ function App() {
       cell: (info) => {
         const progress = info.row.original.progress || 0;
         const status = info.row.original.status || "pending";
+        const progressColors = {
+          pending: "bg-orange-500",
+          processing: "bg-blue-500",
+          completed: "bg-green-600",
+          error: "bg-red-600",
+        };
         return (
-          <div className="progress-container">
+          <div className="relative w-full h-6 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
             <div
-              className={`progress-bar ${status}`}
+              className={`h-full rounded-full transition-all duration-300 ${progressColors[status]}`}
               style={{ width: `${progress}%` }}
             ></div>
-            <span className="progress-text">{progress}%</span>
+            <span className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-xs font-semibold text-gray-800 dark:text-gray-100">
+              {progress}%
+            </span>
           </div>
         );
       },
@@ -220,57 +244,83 @@ function App() {
   });
 
   return (
-    <div className="app">
-      <header>
-        <h1>PhotoReturns</h1>
-        <p className="subtitle">Take back your memories</p>
+    <div className="min-h-screen flex flex-col p-5 max-w-7xl mx-auto bg-gray-50 dark:bg-gray-900">
+      <header className="text-center mb-8 pb-5 border-b-2 border-gray-300 dark:border-gray-700">
+        <h1 className="text-4xl font-bold text-gray-800 dark:text-gray-100 mb-1">PhotoReturns</h1>
+        <p className="text-lg text-gray-500 dark:text-gray-400 italic">Take back your memories</p>
       </header>
 
-      <section className="controls">
-        <div className="folder-selection">
-          <div className="folder-input">
-            <label>Input Directory:</label>
-            <input type="text" value={inputDir} readOnly placeholder="Select folder..." />
-            <button onClick={selectInputDir}>Browse</button>
+      <section className="bg-white dark:bg-gray-800 rounded-lg p-5 mb-5 shadow-md">
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <label className="min-w-[130px] font-semibold text-gray-700 dark:text-gray-300">Input Directory:</label>
+              <input
+                type="text"
+                value={inputDir}
+                readOnly
+                placeholder="Select folder..."
+                className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100"
+              />
+              <button
+                onClick={selectInputDir}
+                className="px-5 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded font-semibold transition-colors"
+              >
+                Browse
+              </button>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="min-w-[130px] font-semibold text-gray-700 dark:text-gray-300">Output Directory:</label>
+              <input
+                type="text"
+                value={outputDir}
+                readOnly
+                placeholder="Select folder..."
+                className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100"
+              />
+              <button
+                onClick={selectOutputDir}
+                className="px-5 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded font-semibold transition-colors"
+              >
+                Browse
+              </button>
+            </div>
           </div>
-          <div className="folder-input">
-            <label>Output Directory:</label>
-            <input type="text" value={outputDir} readOnly placeholder="Select folder..." />
-            <button onClick={selectOutputDir}>Browse</button>
-          </div>
-        </div>
 
-        <div className="actions">
-          <button
-            onClick={scanMedia}
-            disabled={!inputDir || isScanning}
-            className="btn-primary"
-          >
-            {isScanning ? "Scanning..." : "Scan Media Files"}
-          </button>
-          <button
-            onClick={processMedia}
-            disabled={!inputDir || !outputDir || mediaList.length === 0 || isProcessing}
-            className="btn-success"
-          >
-            {isProcessing ? "Processing..." : "Process & Rename"}
-          </button>
+          <div className="flex gap-4 justify-center pt-2">
+            <button
+              onClick={scanMedia}
+              disabled={!inputDir || isScanning}
+              className="px-6 py-3 text-base font-semibold rounded transition-all bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white"
+            >
+              {isScanning ? "Scanning..." : "Scan Media Files"}
+            </button>
+            <button
+              onClick={processMedia}
+              disabled={!inputDir || !outputDir || mediaList.length === 0 || isProcessing}
+              className="px-6 py-3 text-base font-semibold rounded transition-all bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white"
+            >
+              {isProcessing ? "Processing..." : "Process & Rename"}
+            </button>
+          </div>
         </div>
       </section>
 
       {processResult && (
-        <section className="summary">
-          <h3>Process Summary</h3>
-          <p>
+        <section className="bg-green-50 dark:bg-green-900/20 rounded-lg p-5 mb-5 border-l-4 border-green-600">
+          <h3 className="text-green-700 dark:text-green-400 font-semibold mb-2">Process Summary</h3>
+          <p className="text-gray-800 dark:text-gray-200">
             Total: {processResult.total_files} | Processed: {processResult.processed_files} |{" "}
             Success: {processResult.success ? "✓" : "✗"}
           </p>
           {processResult.errors.length > 0 && (
-            <details>
-              <summary>Errors ({processResult.errors.length})</summary>
-              <ul>
+            <details className="mt-2">
+              <summary className="cursor-pointer font-semibold text-red-600 dark:text-red-400">
+                Errors ({processResult.errors.length})
+              </summary>
+              <ul className="mt-2 pl-5 list-disc">
                 {processResult.errors.map((err, i) => (
-                  <li key={i}>{err}</li>
+                  <li key={i} className="text-red-700 dark:text-red-300 my-1">{err}</li>
                 ))}
               </ul>
             </details>
@@ -278,18 +328,24 @@ function App() {
         </section>
       )}
 
-      <section className="media-list">
-        <h3>Media Files ({mediaList.length})</h3>
+      <section className="bg-white dark:bg-gray-800 rounded-lg p-5 mb-5 shadow-md">
+        <h3 className="text-gray-800 dark:text-gray-100 font-semibold mb-4">Media Files ({mediaList.length})</h3>
         {mediaList.length === 0 ? (
-          <p className="empty-message">No media files scanned yet. Select a folder and click "Scan Media Files".</p>
+          <p className="text-center text-gray-400 dark:text-gray-500 py-10 text-lg">
+            No media files scanned yet. Select a folder and click "Scan Media Files".
+          </p>
         ) : (
-          <div className="table-container">
-            <table>
-              <thead>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead className="bg-gray-700 dark:bg-gray-900 text-white">
                 {table.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id}>
                     {headerGroup.headers.map((header) => (
-                      <th key={header.id} style={{ width: header.getSize() }}>
+                      <th
+                        key={header.id}
+                        style={{ width: header.getSize() }}
+                        className="px-2 py-3 text-left font-semibold"
+                      >
                         {flexRender(header.column.columnDef.header, header.getContext())}
                       </th>
                     ))}
@@ -298,9 +354,9 @@ function App() {
               </thead>
               <tbody>
                 {table.getRowModel().rows.map((row) => (
-                  <tr key={row.id}>
+                  <tr key={row.id} className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id}>
+                      <td key={cell.id} className="px-2 py-3">
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
