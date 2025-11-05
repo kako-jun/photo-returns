@@ -19,6 +19,12 @@ pub struct ProcessOptions {
     pub backup_dir: Option<PathBuf>,
     /// 動画ファイルも処理する
     pub include_videos: bool,
+    /// タイムゾーンオフセット（秒、Noneの場合はローカルタイム）
+    pub timezone_offset: Option<i32>,
+    /// 処理後に一時ファイルをクリーンアップ
+    pub cleanup_temp: bool,
+    /// 画像の向きを自動修正
+    pub auto_correct_orientation: bool,
 }
 
 impl Default for ProcessOptions {
@@ -27,6 +33,9 @@ impl Default for ProcessOptions {
             parallel: true,
             include_videos: true,
             backup_dir: None,
+            timezone_offset: None,
+            cleanup_temp: false,
+            auto_correct_orientation: false,
         }
     }
 }
