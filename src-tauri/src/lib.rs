@@ -1,21 +1,44 @@
 mod photo_core;
 
-use photo_core::{PhotoInfo, ProcessResult};
+use photo_core::{MediaInfo, ProcessOptions, ProcessResult};
 use std::path::PathBuf;
 
-/// 指定ディレクトリの写真をスキャンして情報を取得
+/// 指定ディレクトリのメディアファイルをスキャンして情報を取得
 #[tauri::command]
-fn scan_photos(input_dir: String) -> Result<Vec<PhotoInfo>, String> {
+fn scan_media(
+    input_dir: String,
+    include_videos: bool,
+    parallel: bool,
+) -> Result<Vec<MediaInfo>, String> {
     let path = PathBuf::from(input_dir);
-    photo_core::scan_photos(&path).map_err(|e| e.to_string())
+    let options = ProcessOptions {
+        parallel,
+        include_videos,
+        backup_dir: None,
+    };
+    photo_core::scan_media(&path, &options).map_err(|e| e.to_string())
 }
 
-/// 写真をリネームして出力ディレクトリに整理
+/// メディアファイルをリネームして出力ディレクトリに整理
 #[tauri::command]
-fn process_photos(input_dir: String, output_dir: String) -> Result<ProcessResult, String> {
+fn process_media(
+    input_dir: String,
+    output_dir: String,
+    backup_dir: Option<String>,
+    include_videos: bool,
+    parallel: bool,
+) -> Result<ProcessResult, String> {
     let input_path = PathBuf::from(input_dir);
     let output_path = PathBuf::from(output_dir);
-    photo_core::process_photos(&input_path, &output_path).map_err(|e| e.to_string())
+    let backup_path = backup_dir.map(PathBuf::from);
+
+    let options = ProcessOptions {
+        parallel,
+        include_videos,
+        backup_dir: backup_path,
+    };
+
+    photo_core::process_media(&input_path, &output_path, &options).map_err(|e| e.to_string())
 }
 
 /// テスト用のgreetコマンド
@@ -28,7 +51,7 @@ fn greet(name: &str) -> String {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, scan_photos, process_photos])
+        .invoke_handler(tauri::generate_handler![greet, scan_media, process_media])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
