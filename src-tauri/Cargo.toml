@@ -30,4 +30,9 @@ kamadak-exif = "0.6"
 image = "0.24"
 thiserror = "1.0"
 walkdir = "2.4"  # ディレクトリ走査用
+rayon = "1.8"    # 並列処理
+log = "0.4"      # ログ機能
+tracing = "0.1"  # より高度なログ
+tracing-subscriber = "0.3"  # ログ設定
+regex = "1.10"   # 正規表現（連続撮影検出等）
 
