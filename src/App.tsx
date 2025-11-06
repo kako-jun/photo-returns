@@ -199,6 +199,33 @@ function App() {
       return;
     }
 
+    // Directory validation
+    const normalizedInput = inputDir.toLowerCase().replace(/\\/g, '/');
+    const normalizedOutput = outputDir.toLowerCase().replace(/\\/g, '/');
+
+    // Check if output is inside input (dangerous)
+    if (normalizedOutput.startsWith(normalizedInput + '/')) {
+      alert(
+        "❌ Error: Output directory is inside input directory.\n\n" +
+        "This could cause infinite loops.\n" +
+        "Please select a different output location."
+      );
+      return;
+    }
+
+    // Check if input equals output (overwrite mode)
+    if (normalizedInput === normalizedOutput) {
+      const proceed = window.confirm(
+        "⚠️ Warning: Input and output directories are the same.\n\n" +
+        "This will OVERWRITE existing files.\n" +
+        "Backup is strongly recommended.\n\n" +
+        "Do you want to continue?"
+      );
+      if (!proceed) {
+        return;
+      }
+    }
+
     setIsProcessing(true);
     setProcessResult(null);
 
@@ -236,6 +263,35 @@ function App() {
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  // エラーファイルのみ再処理
+  const retryFailedFiles = async () => {
+    const errorFiles = mediaList.filter(item => item.status === "error");
+
+    if (errorFiles.length === 0) {
+      alert("No failed files to retry");
+      return;
+    }
+
+    const proceed = window.confirm(
+      `Retry processing ${errorFiles.length} failed files?\n\n` +
+      "This will attempt to process only the files that failed previously."
+    );
+
+    if (!proceed) {
+      return;
+    }
+
+    // エラーファイルのステータスをpendingにリセット
+    setMediaList(prev => prev.map(item =>
+      item.status === "error"
+        ? { ...item, status: "pending" as const, progress: 0 }
+        : item
+    ));
+
+    // 再処理実行
+    await processMedia();
   };
 
   // Use custom hook for table columns
@@ -280,6 +336,7 @@ function App() {
       onScanMedia={scanMedia}
       isScanning={isScanning}
       onProcessMedia={processMedia}
+      onRetryFailed={retryFailedFiles}
       isProcessing={isProcessing}
       mediaList={mediaList}
       processResult={processResult}
