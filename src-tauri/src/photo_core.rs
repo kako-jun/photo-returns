@@ -3,6 +3,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Local, NaiveDateTime};
 use exif::{In, Reader, Tag};
+use image;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -11,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use walkdir::WalkDir;
 
 use crate::burst::{detect_burst_groups, BurstDetectorConfig};
+use crate::orientation;
 use crate::video_metadata;
 
 /// 処理オプション
@@ -108,6 +110,10 @@ pub struct MediaInfo {
     pub exif_orientation: Option<u32>,
     /// 画像回転が適用されたか
     pub rotation_applied: bool,
+    /// ユーザー選択：TZオフセット補正（例："+09:00", "none", "exif"）
+    pub timezone_offset: Option<String>,
+    /// ユーザー選択：回転方法（"none", "exif", "90", "180", "270"）
+    pub rotation_mode: Option<String>,
     /// 画像の幅（ピクセル）
     pub width: Option<u32>,
     /// 画像の高さ（ピクセル）
@@ -504,6 +510,8 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
                     date_source,
                     exif_orientation: exif_info.orientation,
                     rotation_applied: false, // スキャン時はまだ回転していない
+                    timezone_offset: None, // ユーザー未選択（フロントエンドで設定）
+                    rotation_mode: None, // ユーザー未選択（フロントエンドで設定）
                     width: video_meta.as_ref().map(|v| v.width).or(exif_info.width),
                     height: video_meta.as_ref().map(|v| v.height).or(exif_info.height),
                     logs: Vec::new(), // ログは空で初期化
@@ -658,6 +666,74 @@ pub fn process_media(input_dir: &Path, output_dir: &Path, options: &ProcessOptio
                 Ok(_) => {
                     item.new_path = target_path.clone();
                     item.add_log(LogLevel::Info, format!("File copied successfully to: {}", target_path.display()));
+
+                    // 画像回転処理（rotation_modeに基づく）
+                    if item.media_type == MediaType::Photo {
+                        let rotation_mode = item.rotation_mode.as_deref().unwrap_or("none");
+
+                        if rotation_mode != "none" {
+                            // 回転角度を計算
+                            let degrees = match rotation_mode {
+                                "exif" => {
+                                    // EXIF orientationから角度を取得
+                                    if let Some(ori) = item.exif_orientation {
+                                        match ori {
+                                            1 => 0,
+                                            3 => 180,
+                                            6 => 90,
+                                            8 => 270,
+                                            _ => 0,
+                                        }
+                                    } else {
+                                        0
+                                    }
+                                }
+                                "90" => 90,
+                                "180" => 180,
+                                "270" => 270,
+                                _ => 0,
+                            };
+
+                            if degrees != 0 {
+                                item.add_log(LogLevel::Info, format!("Applying rotation: {}°", degrees));
+
+                                // 画像を開く
+                                match image::open(&target_path) {
+                                    Ok(img) => {
+                                        // 回転適用
+                                        let rotated = match degrees {
+                                            90 => img.rotate90(),
+                                            180 => img.rotate180(),
+                                            270 => img.rotate270(),
+                                            _ => img,
+                                        };
+
+                                        // 上書き保存
+                                        match rotated.save(&target_path) {
+                                            Ok(_) => {
+                                                item.add_log(LogLevel::Info, "Image rotated and saved successfully");
+                                                item.rotation_applied = true;
+
+                                                // EXIF Orientationを1にリセット
+                                                if let Err(e) = orientation::reset_exif_orientation(&target_path) {
+                                                    item.add_log(LogLevel::Warning, format!("Failed to reset EXIF orientation: {}", e));
+                                                } else {
+                                                    item.add_log(LogLevel::Info, "EXIF orientation reset to Normal (1)");
+                                                }
+                                            }
+                                            Err(e) => {
+                                                item.add_log(LogLevel::Error, format!("Failed to save rotated image: {}", e));
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        item.add_log(LogLevel::Error, format!("Failed to open image for rotation: {}", e));
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     *success_count.lock().unwrap() += 1;
                 }
                 Err(e) => {
