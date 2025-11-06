@@ -41,6 +41,7 @@ interface MainLayoutProps {
   onScanMedia: () => void;
   isScanning: boolean;
   onProcessMedia: () => void;
+  onRetryFailed: () => void;
   isProcessing: boolean;
 
   // Data
@@ -83,6 +84,7 @@ export function MainLayout({
   onScanMedia,
   isScanning,
   onProcessMedia,
+  onRetryFailed,
   isProcessing,
   mediaList,
   processResult,
@@ -150,7 +152,7 @@ export function MainLayout({
         </div>
       </section>
 
-      {processResult && <ProcessSummary processResult={processResult} mediaList={mediaList} />}
+      {processResult && <ProcessSummary processResult={processResult} mediaList={mediaList} onRetryFailed={onRetryFailed} />}
 
       <section className="bg-white dark:bg-gray-800 rounded-xl p-6 mb-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
         <h3 className="text-gray-800 dark:text-gray-100 font-semibold mb-4">Media Files ({mediaList.length})</h3>

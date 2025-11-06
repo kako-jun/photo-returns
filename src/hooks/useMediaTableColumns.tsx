@@ -423,19 +423,26 @@ export function useMediaTableColumns({
           };
 
           return (
-            <select
-              value={rotationMode}
-              onChange={handleRotationChange}
-              className="w-24 px-1 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
-            >
-              <option value="none">None</option>
-              <option value="exif">
-                EXIF{exifDegrees ? ` (${exifDegrees})` : ""}
-              </option>
-              <option value="90">90°</option>
-              <option value="180">180°</option>
-              <option value="270">270°</option>
-            </select>
+            <div className="flex flex-col gap-1">
+              {exifDegrees && (
+                <span className="text-xs text-gray-400 dark:text-gray-500" title="EXIF Orientation (reference only)">
+                  EXIF: {exifDegrees}
+                </span>
+              )}
+              <select
+                value={rotationMode}
+                onChange={handleRotationChange}
+                className="w-24 px-1 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
+              >
+                <option value="none">None</option>
+                <option value="exif">
+                  EXIF{exifDegrees ? ` (${exifDegrees})` : ""}
+                </option>
+                <option value="90">90°</option>
+                <option value="180">180°</option>
+                <option value="270">270°</option>
+              </select>
+            </div>
           );
         },
         size: 100,
