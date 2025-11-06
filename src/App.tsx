@@ -9,49 +9,16 @@ import {
   createColumnHelper,
   ExpandedState,
 } from "@tanstack/react-table";
-import { HiOutlineFolderOpen, HiOutlineMagnifyingGlass, HiOutlineCog, HiOutlineMoon, HiOutlineSun, HiOutlineRectangleStack, HiOutlineBars3, HiOutlineSquare3Stack3D, HiOutlineCamera, HiPhoto, HiFilm, HiXMark, HiChevronLeft, HiChevronRight, HiChevronDown, HiChevronUp, HiChevronRight as HiChevronRightCollapsed, HiCheckCircle, HiXCircle, HiMinusCircle } from "react-icons/hi2";
+import { HiOutlineFolderOpen, HiOutlineMagnifyingGlass, HiOutlineCog, HiOutlineRectangleStack, HiOutlineBars3, HiOutlineSquare3Stack3D, HiOutlineCamera, HiPhoto, HiFilm, HiChevronDown, HiChevronRight as HiChevronRightCollapsed } from "react-icons/hi2";
 import "./App.css";
 import { MOCK_ENABLED, mockMediaList, mockProcessResult } from "./mock-data";
-
-// Rust側のMediaInfo型に対応
-export interface MediaInfo {
-  original_path: string;
-  file_name: string;
-  media_type: "Photo" | "Video";
-  date_taken: string | null;
-  subsec_time: number | null; // ミリ秒（0-999）
-  timezone: string | null; // タイムゾーンオフセット（例："+09:00", null=TZ情報なし）
-  // 利用可能な日付候補（ユーザー選択用）
-  exif_date: string | null;
-  filename_date: string | null;
-  file_created_date: string | null;
-  file_modified_date: string | null;
-  new_name: string;
-  new_path: string;
-  file_size: number;
-  burst_group_id: number | null;
-  burst_index: number | null;
-  date_source: "Exif" | "FileName" | "FileCreated" | "FileModified" | "None";
-  exif_orientation: number | null;
-  rotation_applied: boolean;
-  // ユーザー選択：TZオフセット補正（例："+09:00", "none"）
-  timezone_offset?: string;
-  // ユーザー選択：回転方法（"none", "exif", "90", "180", "270"）
-  rotation_mode?: "none" | "exif" | "90" | "180" | "270";
-  width: number | null;
-  height: number | null;
-  progress?: number; // 進捗（0-100）
-  status?: "pending" | "processing" | "completed" | "error" | "no_change";
-  error_message?: string;
-}
-
-export interface ProcessResult {
-  success: boolean;
-  total_files: number;
-  processed_files: number;
-  media: MediaInfo[];
-  errors: string[];
-}
+import type { MediaInfo, ProcessResult } from "./types";
+import { Header } from "./components/Header";
+import { Footer } from "./components/Footer";
+import { ScrollToTopButton } from "./components/ScrollToTopButton";
+import { ProcessSummary } from "./components/ProcessSummary";
+import { ProcessingFlow } from "./components/ProcessingFlow";
+import { LightBox } from "./components/LightBox";
 
 const columnHelper = createColumnHelper<MediaInfo>();
 
@@ -65,217 +32,6 @@ function getOrientationDegrees(orientation: number | null): string | null {
     case 8: return "270°";
     default: return null;
   }
-}
-
-// 処理フロー表示コンポーネント
-function ProcessingFlow({ media }: { media: MediaInfo }) {
-  const isError = media.status === "error";
-  const isCompleted = media.status === "completed";
-  const isProcessing = media.status === "processing";
-
-  type StepStatus = "success" | "error" | "skip" | "pending";
-
-  interface ProcessingStep {
-    label: string;
-    status: StepStatus;
-    details: string;
-  }
-
-  const steps: ProcessingStep[] = [];
-
-  // ① Input File
-  steps.push({
-    label: "Input File",
-    status: "success",
-    details: `${media.file_name} (${(media.file_size / (1024 * 1024)).toFixed(2)} MB)`,
-  });
-
-  // ② Date Source
-  if (media.date_taken) {
-    steps.push({
-      label: "Date Source",
-      status: "success",
-      details: `${media.date_source} → ${new Date(media.date_taken).toLocaleString()}`,
-    });
-  } else {
-    steps.push({
-      label: "Date Source",
-      status: "error",
-      details: "No date found",
-    });
-  }
-
-  // ③ Burst Detection
-  if (media.burst_group_id !== null) {
-    steps.push({
-      label: "Burst Detection",
-      status: "success",
-      details: `Group ${media.burst_group_id}, Index ${media.burst_index}`,
-    });
-  } else {
-    steps.push({
-      label: "Burst Detection",
-      status: "skip",
-      details: "Not in burst group",
-    });
-  }
-
-  // ④ TZ Correction
-  if (media.timezone_offset && media.timezone_offset !== "none") {
-    steps.push({
-      label: "TZ Correction",
-      status: "success",
-      details: `Applied ${media.timezone_offset === "exif" ? "EXIF" : media.timezone_offset}`,
-    });
-  } else {
-    steps.push({
-      label: "TZ Correction",
-      status: "skip",
-      details: "Not applied",
-    });
-  }
-
-  // ⑤ File Naming
-  if (media.new_name) {
-    steps.push({
-      label: "File Naming",
-      status: "success",
-      details: media.new_name,
-    });
-  } else {
-    steps.push({
-      label: "File Naming",
-      status: "error",
-      details: "Name generation failed",
-    });
-  }
-
-  // ⑥ Rotation
-  if (media.rotation_mode && media.rotation_mode !== "none") {
-    const rotationDetails = media.rotation_mode === "exif"
-      ? `EXIF: ${getOrientationDegrees(media.exif_orientation) || "Unknown"}`
-      : `${media.rotation_mode}°`;
-    steps.push({
-      label: "Rotation",
-      status: "success",
-      details: `Applied ${rotationDetails}`,
-    });
-  } else {
-    steps.push({
-      label: "Rotation",
-      status: "skip",
-      details: "Not applied",
-    });
-  }
-
-  // ⑦ Directory Creation
-  if (media.new_path) {
-    const pathParts = media.new_path.split(/[\\/]/);
-    const dirPath = pathParts.slice(-4, -1).join(" / "); // YYYY / YYYY-MM / YYYY-MM-DD
-    steps.push({
-      label: "Directory Creation",
-      status: isCompleted ? "success" : "pending",
-      details: dirPath,
-    });
-  }
-
-  // ⑧ File Processing
-  if (isCompleted) {
-    steps.push({
-      label: "File Processing",
-      status: "success",
-      details: "Copied to output directory",
-    });
-  } else if (isProcessing) {
-    steps.push({
-      label: "File Processing",
-      status: "pending",
-      details: `In progress (${media.progress}%)`,
-    });
-  } else if (isError) {
-    steps.push({
-      label: "File Processing",
-      status: "error",
-      details: media.error_message || "Processing failed",
-    });
-  }
-
-  // ⑨ Complete
-  if (isCompleted) {
-    steps.push({
-      label: "Complete",
-      status: "success",
-      details: "Successfully processed",
-    });
-  } else if (isError) {
-    steps.push({
-      label: "Error",
-      status: "error",
-      details: media.error_message || "Unknown error",
-    });
-  }
-
-  const getStatusIcon = (status: StepStatus) => {
-    switch (status) {
-      case "success":
-        return <HiCheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />;
-      case "error":
-        return <HiXCircle className="w-5 h-5 text-red-600 dark:text-red-400" />;
-      case "skip":
-        return <HiMinusCircle className="w-5 h-5 text-gray-400 dark:text-gray-500" />;
-      case "pending":
-        return <HiMinusCircle className="w-5 h-5 text-blue-600 dark:text-blue-400" />;
-    }
-  };
-
-  // ステップを2列に分割（左: Input処理、右: Output処理）
-  const midPoint = Math.ceil(steps.length / 2);
-  const leftSteps = steps.slice(0, midPoint);
-  const rightSteps = steps.slice(midPoint);
-
-  const renderStepColumn = (stepList: typeof steps, startIndex: number) => (
-    <div className="flex flex-col gap-2">
-      {stepList.map((step, index) => {
-        const absoluteIndex = startIndex + index;
-        return (
-          <div key={absoluteIndex} className="flex items-start gap-3">
-            <div className="flex flex-col items-center">
-              {getStatusIcon(step.status)}
-              {index < stepList.length - 1 && (
-                <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 my-1"></div>
-              )}
-            </div>
-            <div className="flex-1 pb-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-                  {absoluteIndex + 1}. {step.label}
-                </span>
-              </div>
-              <p className={`text-xs mt-1 ${
-                step.status === "error"
-                  ? "text-red-600 dark:text-red-400 font-semibold"
-                  : step.status === "success"
-                  ? "text-gray-900 dark:text-gray-100"
-                  : "text-gray-500 dark:text-gray-400"
-              }`}>
-                {step.details}
-              </p>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-
-  return (
-    <div className="p-6 border-t-2 border-blue-500 dark:border-blue-400">
-      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">Processing Flow</h3>
-      <div className="grid grid-cols-2 gap-6">
-        <div>{renderStepColumn(leftSteps, 0)}</div>
-        <div>{renderStepColumn(rightSteps, midPoint)}</div>
-      </div>
-    </div>
-  );
 }
 
 function App() {
@@ -1020,29 +776,7 @@ function App() {
           </p>
         </div>
       )}
-      <header className="text-center mb-8 pb-5 border-b-2 border-gray-300 dark:border-gray-700 relative">
-        <button
-          onClick={toggleDarkMode}
-          className="absolute top-0 right-0 px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 text-gray-800 dark:text-gray-200 font-semibold transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-2"
-          title="ダークモード切り替え"
-        >
-          {isDark ? (
-            <>
-              <HiOutlineSun className="w-5 h-5" />
-              ライト
-            </>
-          ) : (
-            <>
-              <HiOutlineMoon className="w-5 h-5" />
-              ダーク
-            </>
-          )}
-        </button>
-        <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400 bg-clip-text text-transparent mb-2">
-          PhotoReturns
-        </h1>
-        <p className="text-lg text-gray-500 dark:text-gray-400 italic">Take back your memories</p>
-      </header>
+      <Header isDark={isDark} onToggleDarkMode={toggleDarkMode} />
 
       <section className="bg-white dark:bg-gray-800 rounded-xl p-6 mb-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
         <div className="flex flex-col gap-5">
@@ -1260,62 +994,7 @@ function App() {
         </div>
       </section>
 
-      {processResult && (
-        <section className="bg-green-50 dark:bg-green-900/20 rounded-lg p-5 mb-5 border-l-4 border-green-600">
-          <h3 className="text-green-700 dark:text-green-400 font-semibold mb-2">Process Summary</h3>
-          <p className="text-gray-800 dark:text-gray-200">
-            {processResult.processed_files} / {processResult.total_files} files processed successfully
-          </p>
-          {(() => {
-            // Falsyなステータス（pending, error）を持つファイルを抽出
-            const problemFiles = mediaList
-              .map((item, index) => ({ item, index }))
-              .filter(({ item }) => item.status === "pending" || item.status === "error");
-
-            return problemFiles.length > 0 ? (
-              <details className="mt-3" open>
-                <summary className="cursor-pointer font-semibold text-orange-600 dark:text-orange-400">
-                  Items Requiring Attention ({problemFiles.length})
-                </summary>
-                <ul className="mt-2 space-y-1">
-                  {problemFiles.map(({ item, index }) => (
-                    <li key={index}>
-                      <button
-                        onClick={() => {
-                          const element = document.getElementById(`media-row-${index}`);
-                          if (element) {
-                            element.scrollIntoView({ behavior: "smooth", block: "center" });
-                            // ハイライト効果
-                            element.classList.add("ring-4", "ring-blue-400", "dark:ring-blue-500");
-                            setTimeout(() => {
-                              element.classList.remove("ring-4", "ring-blue-400", "dark:ring-blue-500");
-                            }, 2000);
-                          }
-                        }}
-                        className="text-left w-full px-3 py-2 rounded hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors"
-                      >
-                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold mr-2 ${
-                          item.status === "error"
-                            ? "bg-red-200 dark:bg-red-900/50 text-red-800 dark:text-red-300"
-                            : "bg-orange-200 dark:bg-orange-900/50 text-orange-800 dark:text-orange-300"
-                        }`}>
-                          {item.status}
-                        </span>
-                        <span className="text-gray-900 dark:text-gray-100">{item.file_name}</span>
-                        {item.error_message && (
-                          <span className="block text-xs text-gray-600 dark:text-gray-400 ml-2 mt-1">
-                            {item.error_message}
-                          </span>
-                        )}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            ) : null;
-          })()}
-        </section>
-      )}
+      {processResult && <ProcessSummary processResult={processResult} mediaList={mediaList} />}
 
       <section className="bg-white dark:bg-gray-800 rounded-xl p-6 mb-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
         <h3 className="text-gray-800 dark:text-gray-100 font-semibold mb-4">Media Files ({mediaList.length})</h3>
@@ -1375,121 +1054,20 @@ function App() {
         )}
       </section>
 
-      {/* Footer */}
-      <footer className="mt-auto pt-8 pb-4 border-t border-gray-300 dark:border-gray-700">
-        <div className="flex items-center justify-center gap-3 text-sm text-gray-600 dark:text-gray-400">
-          <span>© kako-jun</span>
-          <a
-            href="https://github.com/kako-jun/photo-returns"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-            aria-label="GitHub"
-          >
-            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-              <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
-            </svg>
-          </a>
-        </div>
-      </footer>
+      <Footer />
 
-      {/* LightBox Modal */}
       {lightboxIndex !== null && mediaList[lightboxIndex] && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
-          onClick={() => setLightboxIndex(null)}
-        >
-          <button
-            onClick={() => setLightboxIndex(null)}
-            className="absolute top-4 right-4 text-white hover:text-gray-300 p-2 rounded-full bg-black bg-opacity-50 hover:bg-opacity-70 transition-all"
-            title="Close (ESC)"
-          >
-            <HiXMark className="w-8 h-8" />
-          </button>
-
-          {lightboxIndex > 0 && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setLightboxIndex(lightboxIndex - 1);
-              }}
-              className="absolute left-4 text-white hover:text-gray-300 p-2 rounded-full bg-black bg-opacity-50 hover:bg-opacity-70 transition-all"
-              title="Previous (←)"
-            >
-              <HiChevronLeft className="w-8 h-8" />
-            </button>
-          )}
-
-          {lightboxIndex < mediaList.length - 1 && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setLightboxIndex(lightboxIndex + 1);
-              }}
-              className="absolute right-4 text-white hover:text-gray-300 p-2 rounded-full bg-black bg-opacity-50 hover:bg-opacity-70 transition-all"
-              title="Next (→)"
-            >
-              <HiChevronRight className="w-8 h-8" />
-            </button>
-          )}
-
-          <div
-            className="max-w-[90vw] max-h-[90vh] flex flex-col items-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {MOCK_ENABLED ? (
-              // モックモード：画像の代わりに情報を表示
-              <div className="bg-gray-800 rounded-lg p-8 shadow-2xl">
-                <HiPhoto className="w-32 h-32 text-gray-400 mx-auto mb-4" />
-                <div className="text-white space-y-2">
-                  <p className="font-semibold text-xl">{mediaList[lightboxIndex].file_name}</p>
-                  <p className="text-gray-300">Type: {mediaList[lightboxIndex].media_type}</p>
-                  <p className="text-gray-300">Size: {(mediaList[lightboxIndex].file_size / (1024 * 1024)).toFixed(2)} MB</p>
-                  {mediaList[lightboxIndex].width && mediaList[lightboxIndex].height && (
-                    <p className="text-gray-300">
-                      Resolution: {mediaList[lightboxIndex].width} × {mediaList[lightboxIndex].height}
-                    </p>
-                  )}
-                  <p className="text-sm text-gray-400 mt-4">
-                    {lightboxIndex + 1} / {mediaList.length}
-                  </p>
-                  <p className="text-xs text-yellow-400 mt-2">
-                    🎨 Mock Mode: Image preview not available
-                  </p>
-                </div>
-              </div>
-            ) : (
-              // 実際のモード：画像を表示
-              <>
-                <img
-                  src={convertFileSrc(mediaList[lightboxIndex].original_path)}
-                  alt={mediaList[lightboxIndex].file_name}
-                  className="max-w-full max-h-[80vh] object-contain rounded shadow-2xl"
-                />
-                <div className="mt-4 text-center text-white bg-black bg-opacity-70 px-4 py-2 rounded">
-                  <p className="font-semibold">{mediaList[lightboxIndex].file_name}</p>
-                  <p className="text-sm text-gray-300">
-                    {lightboxIndex + 1} / {mediaList.length}
-                  </p>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+        <LightBox
+          mediaList={mediaList}
+          currentIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onPrevious={() => setLightboxIndex(lightboxIndex - 1)}
+          onNext={() => setLightboxIndex(lightboxIndex + 1)}
+          isMockMode={MOCK_ENABLED}
+        />
       )}
 
-      {/* Scroll to Top Button */}
-      {showScrollToTop && (
-        <button
-          onClick={scrollToTop}
-          className="fixed bottom-8 right-8 p-4 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 z-40 active:scale-95"
-          title="トップに戻る"
-          aria-label="トップに戻る"
-        >
-          <HiChevronUp className="w-6 h-6" />
-        </button>
-      )}
+      <ScrollToTopButton show={showScrollToTop} onClick={scrollToTop} />
     </div>
   );
 }
