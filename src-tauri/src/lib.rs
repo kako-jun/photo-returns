@@ -1,6 +1,7 @@
 mod burst;
 mod orientation;
 mod photo_core;
+mod video_metadata;
 
 use photo_core::{MediaInfo, ProcessOptions, ProcessResult};
 use std::path::{Path, PathBuf};
