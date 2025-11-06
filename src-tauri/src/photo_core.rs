@@ -1,7 +1,7 @@
 /// 写真・動画リネームのコア機能
 /// y4m2d2の完全移植版
 use anyhow::Result;
-use chrono::{DateTime, Local, NaiveDateTime};
+use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use exif::{In, Reader, Tag};
 use image;
 use rayon::prelude::*;
@@ -329,7 +329,7 @@ fn extract_date_from_filename(filename: &str) -> Option<DateTime<Local>> {
         if let Some(naive) = chrono::NaiveDate::from_ymd_opt(year, month, day)
             .and_then(|d| d.and_hms_opt(hour, minute, second))
         {
-            return Some(DateTime::from_naive_utc_and_offset(naive, *Local::now().offset()));
+            return Local.from_local_datetime(&naive).single();
         }
     }
 
@@ -347,7 +347,7 @@ fn extract_date_from_filename(filename: &str) -> Option<DateTime<Local>> {
         if let Some(naive) = chrono::NaiveDate::from_ymd_opt(year, month, day)
             .and_then(|d| d.and_hms_opt(hour, minute, second))
         {
-            return Some(DateTime::from_naive_utc_and_offset(naive, *Local::now().offset()));
+            return Local.from_local_datetime(&naive).single();
         }
     }
 

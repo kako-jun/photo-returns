@@ -1,7 +1,7 @@
 // モックデータ - ブラウザでの開発用
 import type { MediaInfo } from "./types";
 
-export const MOCK_ENABLED = import.meta.env.MODE === "development" && !(window as any).__TAURI__;
+export const MOCK_ENABLED = false;
 
 export const mockMediaList: MediaInfo[] = [
   {

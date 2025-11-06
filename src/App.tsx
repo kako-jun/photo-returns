@@ -18,8 +18,14 @@ function App() {
     // ローカルストレージから読み込む（デフォルトはライトモード）
     return localStorage.getItem("theme") === "dark";
   });
-  const [inputDir, setInputDir] = useState<string>(MOCK_ENABLED ? "C:\\Photos" : "");
-  const [outputDir, setOutputDir] = useState<string>(MOCK_ENABLED ? "C:\\Output" : "");
+  const [inputDir, setInputDir] = useState<string>(() => {
+    if (MOCK_ENABLED) return "C:\\Photos";
+    return localStorage.getItem("inputDir") || "";
+  });
+  const [outputDir, setOutputDir] = useState<string>(() => {
+    if (MOCK_ENABLED) return "C:\\Output";
+    return localStorage.getItem("outputDir") || "";
+  });
   const [mediaList, setMediaList] = useState<MediaInfo[]>(MOCK_ENABLED ? mockMediaList : []);
   const [isScanning, setIsScanning] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -38,13 +44,13 @@ function App() {
   const [defaultVideoTimezoneOffset, setDefaultVideoTimezoneOffset] = useState<string>("none");
   const [defaultVideoRotationMode, setDefaultVideoRotationMode] = useState<"none" | "exif" | "90" | "180" | "270">("none");
 
-  // ユーザーの確認が必要な行（error、pending）を自動展開
+  // ユーザーの確認が必要な行（error）を自動展開
   useEffect(() => {
     const newExpanded: ExpandedState = {};
     mediaList.forEach((item, index) => {
-      // error: 処理失敗、pending: 処理待ち → 確認が必要
-      // processing: 処理中、completed: 完了、no_change: 変更なし → 展開不要
-      if (item.status === "error" || item.status === "pending") {
+      // error: 処理失敗 → 確認が必要
+      // pending: 処理待ち、processing: 処理中、completed: 完了、no_change: 変更なし → 展開不要
+      if (item.status === "error") {
         newExpanded[index] = true;
       }
     });
@@ -68,13 +74,16 @@ function App() {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault();
         setLightboxIndex(null);
       } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
         setLightboxIndex((prev) => {
           if (prev === null || prev === 0) return prev;
           return prev - 1;
         });
       } else if (e.key === "ArrowRight") {
+        e.preventDefault();
         setLightboxIndex((prev) => {
           if (prev === null || prev === mediaList.length - 1) return prev;
           return prev + 1;
@@ -112,7 +121,9 @@ function App() {
       title: "Select Input Directory",
     });
     if (selected) {
-      setInputDir(selected as string);
+      const path = selected as string;
+      setInputDir(path);
+      localStorage.setItem("inputDir", path);
     }
   };
 
@@ -123,7 +134,9 @@ function App() {
       title: "Select Output Directory",
     });
     if (selected) {
-      setOutputDir(selected as string);
+      const path = selected as string;
+      setOutputDir(path);
+      localStorage.setItem("outputDir", path);
     }
   };
 
