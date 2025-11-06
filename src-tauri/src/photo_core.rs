@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use walkdir::WalkDir;
 
 use crate::burst::{detect_burst_groups, BurstDetectorConfig};
+use crate::video_metadata;
 
 /// 処理オプション
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -385,15 +386,32 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
         };
 
         if let Some(mtype) = media_type {
-            // EXIF情報を取得
-            let exif_info = get_exif_info(path).ok().unwrap_or(ExifInfo {
-                date: None,
-                subsec: None,
-                timezone: None,
-                orientation: None,
-                width: None,
-                height: None,
-            });
+            // 画像の場合はEXIF、動画の場合はQuickTimeメタデータを取得
+            let (exif_info, video_meta) = match mtype {
+                MediaType::Photo => {
+                    let exif = get_exif_info(path).ok().unwrap_or(ExifInfo {
+                        date: None,
+                        subsec: None,
+                        timezone: None,
+                        orientation: None,
+                        width: None,
+                        height: None,
+                    });
+                    (exif, None)
+                }
+                MediaType::Video => {
+                    let video = video_metadata::extract_video_metadata(path).ok();
+                    let empty_exif = ExifInfo {
+                        date: None,
+                        subsec: None,
+                        timezone: None,
+                        orientation: None,
+                        width: None,
+                        height: None,
+                    };
+                    (empty_exif, video)
+                }
+            };
 
             // ファイル名を取得
             let filename = path
@@ -403,13 +421,17 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
 
             // 各候補の日付を取得
             let exif_date = exif_info.date;
+            let video_date = video_meta.as_ref().map(|v| DateTime::<Local>::from(v.creation_time));
             let filename_date = extract_date_from_filename(filename);
             let file_created_date = get_file_created_date(path).ok();
             let file_modified_date = get_file_modified_date(path).ok();
 
-            // 日付を決定（優先順位: EXIF > ファイル名 > ファイル作成日時 > ファイル変更日時）
+            // 日付を決定（優先順位: EXIF/QuickTime > ファイル名 > ファイル作成日時 > ファイル変更日時）
             let (date_taken, date_source, subsec) = if let Some(exif_date) = exif_date {
                 (Some(exif_date), DateSource::Exif, exif_info.subsec)
+            } else if let Some(video_date) = video_date {
+                // 動画のQuickTimeメタデータ
+                (Some(video_date), DateSource::Exif, None) // ExifとしてマークするがQuickTimeデータ
             } else if let Some(filename_date) = filename_date {
                 (Some(filename_date), DateSource::FileName, None)
             } else if let Some(created_date) = file_created_date {
@@ -452,8 +474,8 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
                     date_source,
                     exif_orientation: exif_info.orientation,
                     rotation_applied: false, // スキャン時はまだ回転していない
-                    width: exif_info.width,
-                    height: exif_info.height,
+                    width: video_meta.as_ref().map(|v| v.width).or(exif_info.width),
+                    height: video_meta.as_ref().map(|v| v.height).or(exif_info.height),
                 };
 
                 media.lock().unwrap().push(info);

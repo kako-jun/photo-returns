@@ -37,4 +37,5 @@ log = "0.4"      # ログ機能
 tracing = "0.1"  # より高度なログ
 tracing-subscriber = "0.3"  # ログ設定
 regex = "1.10"   # 正規表現（連続撮影検出等）
+mp4 = "0.14"     # MP4/QuickTimeメタデータ読み取り
 
