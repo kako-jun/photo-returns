@@ -73,6 +73,11 @@ pub struct MediaInfo {
     pub date_taken: Option<DateTime<Local>>,
     pub subsec_time: Option<u32>, // ミリ秒（0-999）
     pub timezone: Option<String>, // タイムゾーンオフセット（例："+09:00", null=TZ情報なし）
+    /// 利用可能な日付候補（ユーザー選択用）
+    pub exif_date: Option<DateTime<Local>>,
+    pub filename_date: Option<DateTime<Local>>,
+    pub file_created_date: Option<DateTime<Local>>,
+    pub file_modified_date: Option<DateTime<Local>>,
     pub new_name: String,
     pub new_path: PathBuf,
     pub file_size: u64,
@@ -396,14 +401,20 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
 
+            // 各候補の日付を取得
+            let exif_date = exif_info.date;
+            let filename_date = extract_date_from_filename(filename);
+            let file_created_date = get_file_created_date(path).ok();
+            let file_modified_date = get_file_modified_date(path).ok();
+
             // 日付を決定（優先順位: EXIF > ファイル名 > ファイル作成日時 > ファイル変更日時）
-            let (date_taken, date_source, subsec) = if let Some(exif_date) = exif_info.date {
+            let (date_taken, date_source, subsec) = if let Some(exif_date) = exif_date {
                 (Some(exif_date), DateSource::Exif, exif_info.subsec)
-            } else if let Some(filename_date) = extract_date_from_filename(filename) {
+            } else if let Some(filename_date) = filename_date {
                 (Some(filename_date), DateSource::FileName, None)
-            } else if let Ok(created_date) = get_file_created_date(path) {
+            } else if let Some(created_date) = file_created_date {
                 (Some(created_date), DateSource::FileCreated, None)
-            } else if let Ok(modified_date) = get_file_modified_date(path) {
+            } else if let Some(modified_date) = file_modified_date {
                 (Some(modified_date), DateSource::FileModified, None)
             } else {
                 (None, DateSource::None, None)
@@ -428,6 +439,11 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
                     } else {
                         None
                     },
+                    // 各候補の日付を保存
+                    exif_date,
+                    filename_date,
+                    file_created_date,
+                    file_modified_date,
                     new_name,
                     new_path: PathBuf::new(),
                     file_size,
