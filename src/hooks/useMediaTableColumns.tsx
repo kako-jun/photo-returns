@@ -129,7 +129,7 @@ export function useMediaTableColumns({
       columnHelper.accessor("media_type", {
         header: "Type",
         cell: (info) => {
-          const hasExif = info.row.original.date_source === "Exif";
+          const hasExif = !!info.row.original.exif_date;
           return (
             <div className="flex items-center gap-1">
               <span
@@ -211,11 +211,12 @@ export function useMediaTableColumns({
           };
 
           return (
-            <select
-              value={currentSource}
-              onChange={handleSourceChange}
-              className={`px-2 py-1 rounded text-xs font-semibold cursor-pointer border border-gray-300 dark:border-gray-600 ${sourceColors[currentSource]}`}
-            >
+            <div className="relative inline-block">
+              <select
+                value={currentSource}
+                onChange={handleSourceChange}
+                className={`appearance-none px-2 py-1 pr-6 rounded text-xs font-semibold cursor-pointer border border-gray-300 dark:border-gray-600 ${sourceColors[currentSource]}`}
+              >
               {availableSources.map(option => (
                 <option
                   key={option.value}
@@ -234,6 +235,8 @@ export function useMediaTableColumns({
                 </option>
               )}
             </select>
+            <HiChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-gray-600 dark:text-gray-400" />
+          </div>
           );
         },
         size: 120,
@@ -248,32 +251,8 @@ export function useMediaTableColumns({
 
           if (!date) return <span className="text-gray-900 dark:text-gray-100">N/A</span>;
 
-          let d = new Date(date);
-
-          // ユーザーが選択したTZオフセットを適用
-          let offsetToUse = selectedOffset;
-          if (selectedOffset === "exif" && exifTimezone) {
-            // EXIFが選ばれていて、EXIF TZ情報がある場合はそれを使う
-            offsetToUse = exifTimezone;
-          }
-
-          if (offsetToUse !== "none" && offsetToUse !== "exif") {
-            const match = offsetToUse.match(/([+-])(\d{2}):(\d{2})/);
-            if (match) {
-              const sign = match[1] === '+' ? 1 : -1;
-              const hours = parseInt(match[2], 10);
-              const minutes = parseInt(match[3], 10);
-              const offsetMinutes = sign * (hours * 60 + minutes);
-
-              // 日本時間は UTC+9 = +540分
-              const japanOffsetMinutes = 540;
-              const diffMinutes = japanOffsetMinutes - offsetMinutes;
-
-              // 差分を適用
-              d = new Date(d.getTime() + diffMinutes * 60 * 1000);
-            }
-          }
-
+          // 元の時刻をそのまま表示（TZ補正は適用しない）
+          const d = new Date(date);
           const formatted = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
 
           const handleOffsetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -295,43 +274,46 @@ export function useMediaTableColumns({
                 </span>
               )}
               <div className="flex items-center gap-1">
-                <select
-                  value={selectedOffset}
-                  onChange={handleOffsetChange}
-                  className="w-28 px-1 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
-                >
-                  <option value="none">None</option>
-                  <option value="exif">
-                    EXIF{exifTimezone ? ` (${exifTimezone})` : ""}
-                  </option>
-                  <option value="-12:00">-12:00</option>
-                  <option value="-11:00">-11:00</option>
-                  <option value="-10:00">-10:00</option>
-                  <option value="-09:00">-09:00</option>
-                  <option value="-08:00">-08:00</option>
-                  <option value="-07:00">-07:00</option>
-                  <option value="-06:00">-06:00</option>
-                  <option value="-05:00">-05:00</option>
-                  <option value="-04:00">-04:00</option>
-                  <option value="-03:00">-03:00</option>
-                  <option value="-02:00">-02:00</option>
-                  <option value="-01:00">-01:00</option>
-                  <option value="+00:00">+00:00</option>
-                  <option value="+01:00">+01:00</option>
-                  <option value="+02:00">+02:00</option>
-                  <option value="+03:00">+03:00</option>
-                  <option value="+04:00">+04:00</option>
-                  <option value="+05:00">+05:00</option>
-                  <option value="+06:00">+06:00</option>
-                  <option value="+07:00">+07:00</option>
-                  <option value="+08:00">+08:00</option>
-                  <option value="+09:00">+09:00</option>
-                  <option value="+10:00">+10:00</option>
-                  <option value="+11:00">+11:00</option>
-                  <option value="+12:00">+12:00</option>
-                  <option value="+13:00">+13:00</option>
-                  <option value="+14:00">+14:00</option>
-                </select>
+                <div className="relative">
+                  <select
+                    value={selectedOffset}
+                    onChange={handleOffsetChange}
+                    className="appearance-none w-28 px-1 py-0.5 pr-5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
+                  >
+                    <option value="none">None</option>
+                    <option value="exif">
+                      EXIF{exifTimezone ? ` (${exifTimezone})` : ""}
+                    </option>
+                    <option value="-12:00">-12:00</option>
+                    <option value="-11:00">-11:00</option>
+                    <option value="-10:00">-10:00</option>
+                    <option value="-09:00">-09:00</option>
+                    <option value="-08:00">-08:00</option>
+                    <option value="-07:00">-07:00</option>
+                    <option value="-06:00">-06:00</option>
+                    <option value="-05:00">-05:00</option>
+                    <option value="-04:00">-04:00</option>
+                    <option value="-03:00">-03:00</option>
+                    <option value="-02:00">-02:00</option>
+                    <option value="-01:00">-01:00</option>
+                    <option value="+00:00">+00:00</option>
+                    <option value="+01:00">+01:00</option>
+                    <option value="+02:00">+02:00</option>
+                    <option value="+03:00">+03:00</option>
+                    <option value="+04:00">+04:00</option>
+                    <option value="+05:00">+05:00</option>
+                    <option value="+06:00">+06:00</option>
+                    <option value="+07:00">+07:00</option>
+                    <option value="+08:00">+08:00</option>
+                    <option value="+09:00">+09:00</option>
+                    <option value="+10:00">+10:00</option>
+                    <option value="+11:00">+11:00</option>
+                    <option value="+12:00">+12:00</option>
+                    <option value="+13:00">+13:00</option>
+                    <option value="+14:00">+14:00</option>
+                  </select>
+                  <HiChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none text-gray-600 dark:text-gray-400" />
+                </div>
               </div>
             </div>
           );
@@ -429,19 +411,22 @@ export function useMediaTableColumns({
                   EXIF: {exifDegrees}
                 </span>
               )}
-              <select
-                value={rotationMode}
-                onChange={handleRotationChange}
-                className="w-24 px-1 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
-              >
-                <option value="none">None</option>
-                <option value="exif">
-                  EXIF{exifDegrees ? ` (${exifDegrees})` : ""}
-                </option>
-                <option value="90">90°</option>
-                <option value="180">180°</option>
-                <option value="270">270°</option>
-              </select>
+              <div className="relative w-32">
+                <select
+                  value={rotationMode}
+                  onChange={handleRotationChange}
+                  className="appearance-none w-full px-2 py-0.5 pr-6 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
+                >
+                  <option value="none">None</option>
+                  <option value="exif">
+                    EXIF{exifDegrees ? ` (${exifDegrees})` : ""}
+                  </option>
+                  <option value="90">90°</option>
+                  <option value="180">180°</option>
+                  <option value="270">270°</option>
+                </select>
+                <HiChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-gray-600 dark:text-gray-400" />
+              </div>
             </div>
           );
         },
@@ -543,8 +528,58 @@ export function useMediaTableColumns({
       columnHelper.accessor("new_name", {
         header: "New Name",
         cell: (info) => {
-          const newPath = info.row.original.new_path;
+          const media = info.row.original;
+          const newPath = media.new_path;
           const hasNewPath = newPath && newPath !== "";
+
+          // TZ補正を適用してファイル名を動的に生成
+          const calculateNewName = (): string => {
+            const dateTaken = media.date_taken;
+            if (!dateTaken) return "unknown_date";
+
+            let d = new Date(dateTaken);
+            const selectedOffset = media.timezone_offset ?? "none";
+            const exifTimezone = media.timezone;
+
+            // TZ補正を適用
+            let offsetToUse = selectedOffset;
+            if (selectedOffset === "exif" && exifTimezone) {
+              offsetToUse = exifTimezone;
+            }
+
+            if (offsetToUse !== "none" && offsetToUse !== "exif") {
+              const match = offsetToUse.match(/([+-])(\d{2}):(\d{2})/);
+              if (match) {
+                const sign = match[1] === '+' ? 1 : -1;
+                const hours = parseInt(match[2], 10);
+                const minutes = parseInt(match[3], 10);
+                const offsetMinutes = sign * (hours * 60 + minutes);
+                d = new Date(d.getTime() + offsetMinutes * 60 * 1000);
+              }
+            }
+
+            // ファイル名を生成
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const hour = String(d.getHours()).padStart(2, '0');
+            const minute = String(d.getMinutes()).padStart(2, '0');
+            const second = String(d.getSeconds()).padStart(2, '0');
+
+            // 拡張子を取得
+            const extension = media.file_name.split('.').pop() || 'jpg';
+
+            // ミリ秒があれば追加
+            if (media.subsec_time !== null && media.subsec_time !== undefined) {
+              const ms = String(media.subsec_time).padStart(3, '0');
+              return `${year}-${month}-${day}_${hour}-${minute}-${second}-${ms}.${extension}`;
+            } else {
+              return `${year}-${month}-${day}_${hour}-${minute}-${second}.${extension}`;
+            }
+          };
+
+          const newName = calculateNewName();
+          const hasNewName = newName && newName !== "unknown_date";
 
           return (
             <button
@@ -565,14 +600,13 @@ export function useMediaTableColumns({
                 }
               }}
               className={`font-mono text-xs font-semibold text-left ${
-                hasNewPath
-                  ? "text-green-600 dark:text-green-400 hover:underline cursor-pointer"
+                hasNewName
+                  ? "text-green-600 dark:text-green-400" + (hasNewPath ? " hover:underline cursor-pointer" : " cursor-default")
                   : "text-gray-400 dark:text-gray-500 cursor-not-allowed"
               }`}
-              title={hasNewPath ? `Click to reveal: ${newPath}` : "Not processed yet"}
-              disabled={!hasNewPath}
+              title={hasNewPath ? `Click to reveal: ${newPath}` : (hasNewName ? "Preview name (not processed yet)" : "Not processed yet")}
             >
-              {info.getValue()}
+              {newName}
             </button>
           );
         },

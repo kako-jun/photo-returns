@@ -1,4 +1,4 @@
-import { HiPhoto, HiFilm } from "react-icons/hi2";
+import { HiPhoto, HiFilm, HiChevronDown } from "react-icons/hi2";
 
 interface DefaultSettingsProps {
   // Photo settings
@@ -45,24 +45,28 @@ export function DefaultSettings({
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <label className="min-w-[80px] text-xs font-medium text-gray-700 dark:text-gray-300">Date Source:</label>
-              <select
-                value={defaultPhotoDateSource}
-                onChange={(e) => onPhotoDateSourceChange(e.target.value as any)}
-                className="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
-              >
-                <option value="Exif" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">EXIF</option>
-                <option value="FileName" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">FileName</option>
-                <option value="FileCreated" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">Created</option>
-                <option value="FileModified" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">Modified</option>
-              </select>
+              <div className="relative flex-1">
+                <select
+                  value={defaultPhotoDateSource}
+                  onChange={(e) => onPhotoDateSourceChange(e.target.value as any)}
+                  className="appearance-none w-full px-2 py-1 pr-6 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
+                >
+                  <option value="Exif" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">EXIF</option>
+                  <option value="FileName" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">FileName</option>
+                  <option value="FileCreated" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">Created</option>
+                  <option value="FileModified" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">Modified</option>
+                </select>
+                <HiChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-gray-600 dark:text-gray-400" />
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <label className="min-w-[80px] text-xs font-medium text-gray-700 dark:text-gray-300">TZ Correction:</label>
-              <select
-                value={defaultPhotoTimezoneOffset}
-                onChange={(e) => onPhotoTimezoneOffsetChange(e.target.value)}
-                className="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
-              >
+              <div className="relative flex-1">
+                <select
+                  value={defaultPhotoTimezoneOffset}
+                  onChange={(e) => onPhotoTimezoneOffsetChange(e.target.value)}
+                  className="appearance-none w-full px-2 py-1 pr-6 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
+                >
                 <option value="none">None</option>
                 <option value="exif">EXIF</option>
                 <option value="-12:00">-12:00</option>
@@ -93,20 +97,25 @@ export function DefaultSettings({
                 <option value="+13:00">+13:00</option>
                 <option value="+14:00">+14:00</option>
               </select>
+              <HiChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-gray-600 dark:text-gray-400" />
+            </div>
             </div>
             <div className="flex items-center gap-2">
               <label className="min-w-[80px] text-xs font-medium text-gray-700 dark:text-gray-300">Rotation:</label>
-              <select
-                value={defaultPhotoRotationMode}
-                onChange={(e) => onPhotoRotationModeChange(e.target.value as any)}
-                className="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
-              >
-                <option value="none">None</option>
-                <option value="exif">EXIF</option>
-                <option value="90">90°</option>
-                <option value="180">180°</option>
-                <option value="270">270°</option>
-              </select>
+              <div className="relative flex-1">
+                <select
+                  value={defaultPhotoRotationMode}
+                  onChange={(e) => onPhotoRotationModeChange(e.target.value as any)}
+                  className="appearance-none w-full px-2 py-1 pr-6 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
+                >
+                  <option value="none">None</option>
+                  <option value="exif">EXIF</option>
+                  <option value="90">90°</option>
+                  <option value="180">180°</option>
+                  <option value="270">270°</option>
+                </select>
+                <HiChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-gray-600 dark:text-gray-400" />
+              </div>
             </div>
           </div>
         </div>
@@ -120,65 +129,74 @@ export function DefaultSettings({
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <label className="min-w-[80px] text-xs font-medium text-gray-700 dark:text-gray-300">Date Source:</label>
-              <select
-                value={defaultVideoDateSource}
-                onChange={(e) => onVideoDateSourceChange(e.target.value as any)}
-                className="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
-              >
-                <option value="FileName" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">FileName</option>
-                <option value="FileCreated" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">Created</option>
-                <option value="FileModified" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">Modified</option>
-              </select>
+              <div className="relative flex-1">
+                <select
+                  value={defaultVideoDateSource}
+                  onChange={(e) => onVideoDateSourceChange(e.target.value as any)}
+                  className="appearance-none w-full px-2 py-1 pr-6 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
+                >
+                  <option value="FileName" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">FileName</option>
+                  <option value="FileCreated" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">Created</option>
+                  <option value="FileModified" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">Modified</option>
+                </select>
+                <HiChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-gray-600 dark:text-gray-400" />
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <label className="min-w-[80px] text-xs font-medium text-gray-700 dark:text-gray-300">TZ Correction:</label>
-              <select
-                value={defaultVideoTimezoneOffset}
-                onChange={(e) => onVideoTimezoneOffsetChange(e.target.value)}
-                className="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
-              >
-                <option value="none">None</option>
-                <option value="-12:00">-12:00</option>
-                <option value="-11:00">-11:00</option>
-                <option value="-10:00">-10:00</option>
-                <option value="-09:00">-09:00</option>
-                <option value="-08:00">-08:00</option>
-                <option value="-07:00">-07:00</option>
-                <option value="-06:00">-06:00</option>
-                <option value="-05:00">-05:00</option>
-                <option value="-04:00">-04:00</option>
-                <option value="-03:00">-03:00</option>
-                <option value="-02:00">-02:00</option>
-                <option value="-01:00">-01:00</option>
-                <option value="+00:00">+00:00</option>
-                <option value="+01:00">+01:00</option>
-                <option value="+02:00">+02:00</option>
-                <option value="+03:00">+03:00</option>
-                <option value="+04:00">+04:00</option>
-                <option value="+05:00">+05:00</option>
-                <option value="+06:00">+06:00</option>
-                <option value="+07:00">+07:00</option>
-                <option value="+08:00">+08:00</option>
-                <option value="+09:00">+09:00</option>
-                <option value="+10:00">+10:00</option>
-                <option value="+11:00">+11:00</option>
-                <option value="+12:00">+12:00</option>
-                <option value="+13:00">+13:00</option>
-                <option value="+14:00">+14:00</option>
-              </select>
+              <div className="relative flex-1">
+                <select
+                  value={defaultVideoTimezoneOffset}
+                  onChange={(e) => onVideoTimezoneOffsetChange(e.target.value)}
+                  className="appearance-none w-full px-2 py-1 pr-6 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
+                >
+                  <option value="none">None</option>
+                  <option value="-12:00">-12:00</option>
+                  <option value="-11:00">-11:00</option>
+                  <option value="-10:00">-10:00</option>
+                  <option value="-09:00">-09:00</option>
+                  <option value="-08:00">-08:00</option>
+                  <option value="-07:00">-07:00</option>
+                  <option value="-06:00">-06:00</option>
+                  <option value="-05:00">-05:00</option>
+                  <option value="-04:00">-04:00</option>
+                  <option value="-03:00">-03:00</option>
+                  <option value="-02:00">-02:00</option>
+                  <option value="-01:00">-01:00</option>
+                  <option value="+00:00">+00:00</option>
+                  <option value="+01:00">+01:00</option>
+                  <option value="+02:00">+02:00</option>
+                  <option value="+03:00">+03:00</option>
+                  <option value="+04:00">+04:00</option>
+                  <option value="+05:00">+05:00</option>
+                  <option value="+06:00">+06:00</option>
+                  <option value="+07:00">+07:00</option>
+                  <option value="+08:00">+08:00</option>
+                  <option value="+09:00">+09:00</option>
+                  <option value="+10:00">+10:00</option>
+                  <option value="+11:00">+11:00</option>
+                  <option value="+12:00">+12:00</option>
+                  <option value="+13:00">+13:00</option>
+                  <option value="+14:00">+14:00</option>
+                </select>
+                <HiChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-gray-600 dark:text-gray-400" />
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <label className="min-w-[80px] text-xs font-medium text-gray-700 dark:text-gray-300">Rotation:</label>
-              <select
-                value={defaultVideoRotationMode}
-                onChange={(e) => onVideoRotationModeChange(e.target.value as any)}
-                className="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
-              >
-                <option value="none">None</option>
-                <option value="90">90°</option>
-                <option value="180">180°</option>
-                <option value="270">270°</option>
-              </select>
+              <div className="relative flex-1">
+                <select
+                  value={defaultVideoRotationMode}
+                  onChange={(e) => onVideoRotationModeChange(e.target.value as any)}
+                  className="appearance-none w-full px-2 py-1 pr-6 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
+                >
+                  <option value="none">None</option>
+                  <option value="90">90°</option>
+                  <option value="180">180°</option>
+                  <option value="270">270°</option>
+                </select>
+                <HiChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-gray-600 dark:text-gray-400" />
+              </div>
             </div>
           </div>
         </div>
