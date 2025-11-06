@@ -1,0 +1,81 @@
+// モックデータ - ブラウザでの開発用
+import type { MediaInfo } from "./App";
+
+export const MOCK_ENABLED = import.meta.env.MODE === "development" && !window.__TAURI__;
+
+export const mockMediaList: MediaInfo[] = [
+  {
+    original_path: "C:\\Photos\\IMG_0001.jpg",
+    file_name: "IMG_0001.jpg",
+    media_type: "Photo",
+    date_taken: "2025-01-15T10:30:00",
+    new_name: "20250115_103000.jpg",
+    new_path: "C:\\Output\\2025\\202501\\20250115\\20250115_103000.jpg",
+    file_size: 2_500_000,
+    burst_group_id: null,
+    burst_index: null,
+    progress: 0,
+    status: "pending",
+  },
+  {
+    original_path: "C:\\Photos\\IMG_0002.jpg",
+    file_name: "IMG_0002.jpg",
+    media_type: "Photo",
+    date_taken: "2025-01-15T10:30:01",
+    new_name: "20250115_103001_01.jpg",
+    new_path: "C:\\Output\\2025\\202501\\20250115\\20250115_103001_01.jpg",
+    file_size: 2_450_000,
+    burst_group_id: 1,
+    burst_index: 1,
+    progress: 100,
+    status: "completed",
+  },
+  {
+    original_path: "C:\\Photos\\IMG_0003.jpg",
+    file_name: "IMG_0003.jpg",
+    media_type: "Photo",
+    date_taken: "2025-01-15T10:30:02",
+    new_name: "20250115_103001_02.jpg",
+    new_path: "C:\\Output\\2025\\202501\\20250115\\20250115_103001_02.jpg",
+    file_size: 2_480_000,
+    burst_group_id: 1,
+    burst_index: 2,
+    progress: 100,
+    status: "completed",
+  },
+  {
+    original_path: "C:\\Photos\\VID_0001.mp4",
+    file_name: "VID_0001.mp4",
+    media_type: "Video",
+    date_taken: "2025-01-16T14:22:30",
+    new_name: "20250116_142230.mp4",
+    new_path: "C:\\Output\\2025\\202501\\20250116\\20250116_142230.mp4",
+    file_size: 15_800_000,
+    burst_group_id: null,
+    burst_index: null,
+    progress: 50,
+    status: "processing",
+  },
+  {
+    original_path: "C:\\Photos\\IMG_9999.jpg",
+    file_name: "IMG_9999.jpg",
+    media_type: "Photo",
+    date_taken: null,
+    new_name: "unknown_date.jpg",
+    new_path: "",
+    file_size: 1_200_000,
+    burst_group_id: null,
+    burst_index: null,
+    progress: 0,
+    status: "error",
+    error_message: "No EXIF date found",
+  },
+];
+
+export const mockProcessResult = {
+  success: true,
+  total_files: 5,
+  processed_files: 4,
+  media: mockMediaList,
+  errors: ["Failed to process IMG_9999.jpg: No EXIF date found"],
+};
