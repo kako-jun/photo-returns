@@ -516,13 +516,12 @@ function App() {
               </span>
             )}
             <div className="flex items-center gap-1">
-              <span className="text-xs text-gray-600 dark:text-gray-400">補正:</span>
               <select
                 value={selectedOffset}
                 onChange={handleOffsetChange}
                 className="w-28 px-1 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
               >
-                <option value="none">なし</option>
+                <option value="none">None</option>
                 <option value="exif">
                   EXIF{exifTimezone ? ` (${exifTimezone})` : ""}
                 </option>
@@ -848,7 +847,7 @@ function App() {
                       onChange={(e) => setDefaultPhotoTimezoneOffset(e.target.value)}
                       className="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
                     >
-                      <option value="none">なし</option>
+                      <option value="none">None</option>
                       <option value="exif">EXIF</option>
                       <option value="-12:00">-12:00</option>
                       <option value="-11:00">-11:00</option>
@@ -886,7 +885,7 @@ function App() {
                       onChange={(e) => setDefaultPhotoRotationMode(e.target.value as any)}
                       className="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
                     >
-                      <option value="none">なし</option>
+                      <option value="none">None</option>
                       <option value="exif">EXIF</option>
                       <option value="90">90°</option>
                       <option value="180">180°</option>
@@ -922,7 +921,7 @@ function App() {
                       onChange={(e) => setDefaultVideoTimezoneOffset(e.target.value)}
                       className="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
                     >
-                      <option value="none">なし</option>
+                      <option value="none">None</option>
                       <option value="-12:00">-12:00</option>
                       <option value="-11:00">-11:00</option>
                       <option value="-10:00">-10:00</option>
@@ -959,14 +958,11 @@ function App() {
                       onChange={(e) => setDefaultVideoRotationMode(e.target.value as any)}
                       className="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
                     >
-                      <option value="none">なし</option>
+                      <option value="none">None</option>
                       <option value="90">90°</option>
                       <option value="180">180°</option>
                       <option value="270">270°</option>
                     </select>
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 italic">
-                    (Videos don't have EXIF. QuickTime metadata support: TODO)
                   </div>
                 </div>
               </div>

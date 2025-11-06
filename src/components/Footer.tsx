@@ -1,6 +1,6 @@
 export function Footer() {
   return (
-    <footer className="mt-auto pt-8 pb-4 border-t border-gray-300 dark:border-gray-700">
+    <footer className="mt-auto pt-8 pb-4">
       <div className="flex items-center justify-center gap-3 text-sm text-gray-600 dark:text-gray-400">
         <span>© kako-jun</span>
         <a
