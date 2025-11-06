@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   useReactTable,
@@ -7,7 +7,7 @@ import {
   flexRender,
   createColumnHelper,
 } from "@tanstack/react-table";
-import { HiOutlineFolderOpen, HiOutlineMagnifyingGlass, HiOutlineCog, HiOutlineMoon, HiOutlineSun } from "react-icons/hi2";
+import { HiOutlineFolderOpen, HiOutlineMagnifyingGlass, HiOutlineCog, HiOutlineMoon, HiOutlineSun, HiOutlineRectangleStack, HiOutlineBars3, HiOutlineSquare3Stack3D, HiOutlineCamera, HiPhoto, HiFilm, HiXMark, HiChevronLeft, HiChevronRight } from "react-icons/hi2";
 import "./App.css";
 import { MOCK_ENABLED, mockMediaList, mockProcessResult } from "./mock-data";
 
@@ -17,13 +17,20 @@ export interface MediaInfo {
   file_name: string;
   media_type: "Photo" | "Video";
   date_taken: string | null;
+  subsec_time: number | null; // ミリ秒（0-999）
+  timezone: string | null; // タイムゾーンオフセット（例："+09:00", null=TZ情報なし）
   new_name: string;
   new_path: string;
   file_size: number;
   burst_group_id: number | null;
   burst_index: number | null;
+  date_source: "Exif" | "FileName" | "FileCreated" | "FileModified" | "None";
+  exif_orientation: number | null;
+  rotation_applied: boolean;
+  width: number | null;
+  height: number | null;
   progress?: number; // 進捗（0-100）
-  status?: "pending" | "processing" | "completed" | "error";
+  status?: "pending" | "processing" | "completed" | "error" | "no_change";
   error_message?: string;
 }
 
@@ -50,6 +57,7 @@ function App() {
   const [processResult, setProcessResult] = useState<ProcessResult | null>(
     MOCK_ENABLED ? mockProcessResult : null
   );
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   // ダークモード切り替え
   useEffect(() => {
@@ -61,6 +69,30 @@ function App() {
       localStorage.setItem("theme", "light");
     }
   }, [isDark]);
+
+  // LightBox キーボードナビゲーション
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setLightboxIndex(null);
+      } else if (e.key === "ArrowLeft") {
+        setLightboxIndex((prev) => {
+          if (prev === null || prev === 0) return prev;
+          return prev - 1;
+        });
+      } else if (e.key === "ArrowRight") {
+        setLightboxIndex((prev) => {
+          if (prev === null || prev === mediaList.length - 1) return prev;
+          return prev + 1;
+        });
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [lightboxIndex, mediaList.length]);
 
   const toggleDarkMode = () => {
     setIsDark(!isDark);
@@ -173,30 +205,136 @@ function App() {
 
   // テーブルのカラム定義
   const columns = [
-    columnHelper.accessor("media_type", {
-      header: "Type",
+    columnHelper.display({
+      id: "index",
+      header: "#",
       cell: (info) => (
-        <span
-          className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-            info.getValue() === "Photo"
-              ? "bg-blue-500 text-white"
-              : "bg-purple-600 text-white"
-          }`}
-        >
-          {info.getValue()}
+        <span className="text-gray-600 dark:text-gray-400 font-semibold">
+          {info.row.index + 1}
         </span>
       ),
+      size: 50,
+    }),
+    columnHelper.display({
+      id: "preview",
+      header: "Preview",
+      cell: (info) => {
+        const mediaType = info.row.original.media_type;
+        const originalPath = info.row.original.original_path;
+        const rowIndex = info.row.index;
+
+        if (MOCK_ENABLED) {
+          // モックモードでは画像を表示しない
+          return (
+            <div className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center">
+              {mediaType === "Photo" ? (
+                <HiPhoto className="w-8 h-8 text-gray-400" />
+              ) : (
+                <HiFilm className="w-8 h-8 text-gray-400" />
+              )}
+            </div>
+          );
+        }
+
+        if (mediaType === "Photo") {
+          const assetUrl = convertFileSrc(originalPath);
+          return (
+            <button
+              onClick={() => setLightboxIndex(rowIndex)}
+              className="focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+              title="Click to view full size"
+            >
+              <img
+                src={assetUrl}
+                alt="thumbnail"
+                className="w-16 h-16 object-cover rounded border border-gray-300 dark:border-gray-600 hover:opacity-80 transition-opacity cursor-pointer"
+                loading="lazy"
+              />
+            </button>
+          );
+        } else {
+          // 動画の場合はアイコン表示（クリック不可）
+          return (
+            <div className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center border border-gray-300 dark:border-gray-600">
+              <HiFilm className="w-8 h-8 text-purple-600 dark:text-purple-400" />
+            </div>
+          );
+        }
+      },
       size: 80,
+    }),
+    columnHelper.accessor("media_type", {
+      header: "Type",
+      cell: (info) => {
+        const hasExif = info.row.original.date_source === "Exif";
+        return (
+          <div className="flex items-center gap-1">
+            <span
+              className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
+                info.getValue() === "Photo"
+                  ? "bg-blue-500 text-white"
+                  : "bg-purple-600 text-white"
+              }`}
+            >
+              {info.getValue()}
+            </span>
+            {info.getValue() === "Photo" && hasExif && (
+              <HiOutlineCamera className="w-4 h-4 text-green-600 dark:text-green-400" title="EXIF data available" />
+            )}
+          </div>
+        );
+      },
+      size: 110,
     }),
     columnHelper.accessor("file_name", {
       header: "Original Name",
-      cell: (info) => <span className="text-gray-900 dark:text-gray-100" title={info.row.original.original_path}>{info.getValue()}</span>,
+      cell: (info) => (
+        <button
+          onClick={async () => {
+            if (MOCK_ENABLED) {
+              alert("Mock mode: Cannot open file manager");
+              return;
+            }
+            try {
+              await invoke("reveal_in_filemanager", { path: info.row.original.original_path });
+            } catch (err) {
+              console.error("Failed to reveal file:", err);
+              alert(`Failed to open file manager: ${err}`);
+            }
+          }}
+          className="text-left text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+          title={`Click to reveal: ${info.row.original.original_path}`}
+        >
+          {info.getValue()}
+        </button>
+      ),
       size: 250,
     }),
-    columnHelper.accessor("new_name", {
-      header: "New Name",
-      cell: (info) => <span className="font-mono text-green-600 dark:text-green-400 font-semibold">{info.getValue()}</span>,
-      size: 200,
+    columnHelper.accessor("date_source", {
+      header: "Date Source",
+      cell: (info) => {
+        const source = info.getValue();
+        const sourceColors = {
+          Exif: "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300",
+          FileName: "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300",
+          FileCreated: "bg-cyan-100 dark:bg-cyan-900/30 text-cyan-800 dark:text-cyan-300",
+          FileModified: "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300",
+          None: "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300",
+        };
+        const displayText = {
+          Exif: "EXIF",
+          FileName: "FileName",
+          FileCreated: "Created",
+          FileModified: "Modified",
+          None: "None",
+        };
+        return (
+          <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${sourceColors[source]}`}>
+            {displayText[source]}
+          </span>
+        );
+      },
+      size: 110,
     }),
     columnHelper.accessor("date_taken", {
       header: "Date Taken",
@@ -206,9 +344,63 @@ function App() {
 
         const d = new Date(date);
         const formatted = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-        return <span className="text-gray-900 dark:text-gray-100 font-mono">{formatted}</span>;
+        const timezone = info.row.original.timezone;
+        const tzDisplay = timezone ? (
+          <span className="text-xs text-blue-600 dark:text-blue-400 ml-1" title="Timezone from EXIF">
+            {timezone}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-400 dark:text-gray-500 ml-1" title="No timezone information">
+            (no TZ)
+          </span>
+        );
+        return (
+          <div className="flex items-center">
+            <span className="text-gray-900 dark:text-gray-100 font-mono">{formatted}</span>
+            {tzDisplay}
+          </div>
+        );
       },
-      size: 180,
+      size: 230,
+    }),
+    columnHelper.display({
+      id: "resolution",
+      header: "Resolution",
+      cell: (info) => {
+        const { width, height } = info.row.original;
+        if (!width || !height) return <span className="text-gray-400 dark:text-gray-500 text-xs">-</span>;
+
+        // アスペクト比を判定
+        const isPortrait = height > width;
+        const isSquare = height === width;
+        const isLandscape = width > height;
+
+        return (
+          <div className="flex items-center gap-1">
+            {isPortrait && <HiOutlineBars3 className="w-4 h-4 text-blue-600 dark:text-blue-400 rotate-90" title="Portrait" />}
+            {isLandscape && <HiOutlineBars3 className="w-4 h-4 text-purple-600 dark:text-purple-400" title="Landscape" />}
+            {isSquare && <HiOutlineSquare3Stack3D className="w-4 h-4 text-green-600 dark:text-green-400" title="Square" />}
+            <span className="text-gray-900 dark:text-gray-100 text-xs font-mono">{width}×{height}</span>
+          </div>
+        );
+      },
+      size: 130,
+    }),
+    columnHelper.display({
+      id: "rotation",
+      header: "Rotated",
+      cell: (info) => {
+        const { rotation_applied, exif_orientation } = info.row.original;
+        if (!exif_orientation || exif_orientation === 1) {
+          return <span className="text-gray-400 dark:text-gray-500">-</span>;
+        }
+        return (
+          <span className={`text-xs ${rotation_applied ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'}`}>
+            {rotation_applied ? '✓' : `Orient ${exif_orientation}`}
+          </span>
+        );
+      },
+      size: 80,
     }),
     columnHelper.accessor("file_size", {
       header: "Size",
@@ -217,9 +409,47 @@ function App() {
         const formatted = size > 1024 * 1024
           ? `${(size / (1024 * 1024)).toFixed(1)} MB`
           : `${(size / 1024).toFixed(1)} KB`;
-        return <span className="text-gray-900 dark:text-gray-100">{formatted}</span>;
+        return <span className="text-gray-900 dark:text-gray-100 text-xs">{formatted}</span>;
       },
-      size: 100,
+      size: 90,
+    }),
+    columnHelper.accessor("new_name", {
+      header: "New Name",
+      cell: (info) => {
+        const newPath = info.row.original.new_path;
+        const hasNewPath = newPath && newPath !== "";
+
+        return (
+          <button
+            onClick={async () => {
+              if (MOCK_ENABLED) {
+                alert("Mock mode: Cannot open file manager");
+                return;
+              }
+              if (!hasNewPath) {
+                alert("File has not been processed yet");
+                return;
+              }
+              try {
+                await invoke("reveal_in_filemanager", { path: newPath });
+              } catch (err) {
+                console.error("Failed to reveal file:", err);
+                alert(`Failed to open file manager: ${err}`);
+              }
+            }}
+            className={`font-mono text-xs font-semibold text-left ${
+              hasNewPath
+                ? "text-green-600 dark:text-green-400 hover:underline cursor-pointer"
+                : "text-gray-400 dark:text-gray-500 cursor-not-allowed"
+            }`}
+            title={hasNewPath ? `Click to reveal: ${newPath}` : "Not processed yet"}
+            disabled={!hasNewPath}
+          >
+            {info.getValue()}
+          </button>
+        );
+      },
+      size: 200,
     }),
     columnHelper.accessor("status", {
       header: "Status",
@@ -230,10 +460,18 @@ function App() {
           processing: "bg-blue-500 text-white",
           completed: "bg-green-600 text-white",
           error: "bg-red-600 text-white",
+          no_change: "bg-gray-500 text-white",
+        };
+        const displayText = {
+          pending: "PENDING",
+          processing: "PROCESSING",
+          completed: "COMPLETED",
+          error: "ERROR",
+          no_change: "NO CHANGE",
         };
         return (
           <span className={`inline-block px-2 py-1 rounded text-xs font-semibold uppercase ${statusColors[status]}`}>
-            {status}
+            {displayText[status]}
           </span>
         );
       },
@@ -250,6 +488,7 @@ function App() {
           processing: "bg-blue-500",
           completed: "bg-green-600",
           error: "bg-red-600",
+          no_change: "bg-gray-500",
         };
         return (
           <div className="relative w-full h-6 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
@@ -274,7 +513,7 @@ function App() {
   });
 
   return (
-    <div className="min-h-screen flex flex-col p-5 max-w-7xl mx-auto bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen flex flex-col p-5 bg-gray-50 dark:bg-gray-900">
       {MOCK_ENABLED && (
         <div className="mb-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 rounded">
           <p className="text-yellow-800 dark:text-yellow-300 font-semibold">
@@ -432,6 +671,65 @@ function App() {
           </div>
         )}
       </section>
+
+      {/* LightBox Modal */}
+      {lightboxIndex !== null && mediaList[lightboxIndex] && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90"
+          onClick={() => setLightboxIndex(null)}
+        >
+          <button
+            onClick={() => setLightboxIndex(null)}
+            className="absolute top-4 right-4 text-white hover:text-gray-300 p-2 rounded-full bg-black bg-opacity-50 hover:bg-opacity-70 transition-all"
+            title="Close (ESC)"
+          >
+            <HiXMark className="w-8 h-8" />
+          </button>
+
+          {lightboxIndex > 0 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setLightboxIndex(lightboxIndex - 1);
+              }}
+              className="absolute left-4 text-white hover:text-gray-300 p-2 rounded-full bg-black bg-opacity-50 hover:bg-opacity-70 transition-all"
+              title="Previous (←)"
+            >
+              <HiChevronLeft className="w-8 h-8" />
+            </button>
+          )}
+
+          {lightboxIndex < mediaList.length - 1 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setLightboxIndex(lightboxIndex + 1);
+              }}
+              className="absolute right-4 text-white hover:text-gray-300 p-2 rounded-full bg-black bg-opacity-50 hover:bg-opacity-70 transition-all"
+              title="Next (→)"
+            >
+              <HiChevronRight className="w-8 h-8" />
+            </button>
+          )}
+
+          <div
+            className="max-w-[90vw] max-h-[90vh] flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={convertFileSrc(mediaList[lightboxIndex].original_path)}
+              alt={mediaList[lightboxIndex].file_name}
+              className="max-w-full max-h-[80vh] object-contain rounded shadow-2xl"
+            />
+            <div className="mt-4 text-center text-white bg-black bg-opacity-70 px-4 py-2 rounded">
+              <p className="font-semibold">{mediaList[lightboxIndex].file_name}</p>
+              <p className="text-sm text-gray-300">
+                {lightboxIndex + 1} / {mediaList.length}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

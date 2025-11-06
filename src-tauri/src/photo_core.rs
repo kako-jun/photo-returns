@@ -49,6 +49,21 @@ pub enum MediaType {
     Video,
 }
 
+/// 日付の取得元
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DateSource {
+    /// EXIF撮影日時から取得
+    Exif,
+    /// ファイル名から抽出
+    FileName,
+    /// ファイル作成日時から取得
+    FileCreated,
+    /// ファイル変更日時から取得
+    FileModified,
+    /// 日付情報なし
+    None,
+}
+
 /// メディアファイル情報
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MediaInfo {
@@ -56,6 +71,8 @@ pub struct MediaInfo {
     pub file_name: String,
     pub media_type: MediaType,
     pub date_taken: Option<DateTime<Local>>,
+    pub subsec_time: Option<u32>, // ミリ秒（0-999）
+    pub timezone: Option<String>, // タイムゾーンオフセット（例："+09:00", null=TZ情報なし）
     pub new_name: String,
     pub new_path: PathBuf,
     pub file_size: u64,
@@ -63,6 +80,16 @@ pub struct MediaInfo {
     pub burst_group_id: Option<usize>,
     /// バーストグループ内のインデックス（1始まり）
     pub burst_index: Option<usize>,
+    /// 日付の取得元
+    pub date_source: DateSource,
+    /// EXIF orientation値（1-8、Noneは回転なし）
+    pub exif_orientation: Option<u32>,
+    /// 画像回転が適用されたか
+    pub rotation_applied: bool,
+    /// 画像の幅（ピクセル）
+    pub width: Option<u32>,
+    /// 画像の高さ（ピクセル）
+    pub height: Option<u32>,
 }
 
 /// 処理結果
@@ -91,15 +118,42 @@ fn is_video_file(extension: &str) -> bool {
     )
 }
 
-/// EXIF情報から撮影日時を取得
-fn get_exif_date(path: &Path) -> Result<Option<DateTime<Local>>> {
+/// EXIF情報の詳細
+#[derive(Debug, Clone)]
+struct ExifInfo {
+    date: Option<DateTime<Local>>,
+    subsec: Option<u32>, // ミリ秒（0-999）
+    timezone: Option<String>, // タイムゾーンオフセット（例："+09:00"）
+    orientation: Option<u32>,
+    width: Option<u32>,
+    height: Option<u32>,
+}
+
+/// EXIF情報を取得
+fn get_exif_info(path: &Path) -> Result<ExifInfo> {
     let file = fs::File::open(path)?;
     let mut bufreader = std::io::BufReader::new(&file);
 
     let exifreader = Reader::new();
     let exif = match exifreader.read_from_container(&mut bufreader) {
         Ok(exif) => exif,
-        Err(_) => return Ok(None),
+        Err(_) => return Ok(ExifInfo {
+            date: None,
+            subsec: None,
+            timezone: None,
+            orientation: None,
+            width: None,
+            height: None,
+        }),
+    };
+
+    let mut info = ExifInfo {
+        date: None,
+        subsec: None,
+        timezone: None,
+        orientation: None,
+        width: None,
+        height: None,
     };
 
     // DateTimeOriginal (撮影日時) を取得
@@ -107,52 +161,195 @@ fn get_exif_date(path: &Path) -> Result<Option<DateTime<Local>>> {
         if let exif::Value::Ascii(ref vec) = field.value {
             if let Some(datetime) = vec.first() {
                 let datetime_str = String::from_utf8_lossy(datetime);
-                // EXIF日付フォーマット: "2024:06:17 14:30:52"
                 if let Ok(naive) = NaiveDateTime::parse_from_str(&datetime_str, "%Y:%m:%d %H:%M:%S") {
-                    return Ok(Some(DateTime::from_naive_utc_and_offset(
+                    info.date = Some(DateTime::from_naive_utc_and_offset(
                         naive,
                         *Local::now().offset(),
-                    )));
+                    ));
                 }
             }
         }
     }
 
-    // DateTime も試す
-    if let Some(field) = exif.get_field(Tag::DateTime, In::PRIMARY) {
+    // DateTime も試す（DateTimeOriginalがない場合）
+    if info.date.is_none() {
+        if let Some(field) = exif.get_field(Tag::DateTime, In::PRIMARY) {
+            if let exif::Value::Ascii(ref vec) = field.value {
+                if let Some(datetime) = vec.first() {
+                    let datetime_str = String::from_utf8_lossy(datetime);
+                    if let Ok(naive) = NaiveDateTime::parse_from_str(&datetime_str, "%Y:%m:%d %H:%M:%S") {
+                        info.date = Some(DateTime::from_naive_utc_and_offset(
+                            naive,
+                            *Local::now().offset(),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    // SubSecTimeOriginal (ミリ秒) を取得
+    if let Some(field) = exif.get_field(Tag::SubSecTimeOriginal, In::PRIMARY) {
         if let exif::Value::Ascii(ref vec) = field.value {
-            if let Some(datetime) = vec.first() {
-                let datetime_str = String::from_utf8_lossy(datetime);
-                if let Ok(naive) = NaiveDateTime::parse_from_str(&datetime_str, "%Y:%m:%d %H:%M:%S") {
-                    return Ok(Some(DateTime::from_naive_utc_and_offset(
-                        naive,
-                        *Local::now().offset(),
-                    )));
+            if let Some(subsec_bytes) = vec.first() {
+                let subsec_str = String::from_utf8_lossy(subsec_bytes);
+                if let Ok(subsec) = subsec_str.trim().parse::<u32>() {
+                    info.subsec = Some(subsec);
                 }
             }
         }
     }
 
-    Ok(None)
+    // SubSecTime も試す（SubSecTimeOriginalがない場合）
+    if info.subsec.is_none() {
+        if let Some(field) = exif.get_field(Tag::SubSecTime, In::PRIMARY) {
+            if let exif::Value::Ascii(ref vec) = field.value {
+                if let Some(subsec_bytes) = vec.first() {
+                    let subsec_str = String::from_utf8_lossy(subsec_bytes);
+                    if let Ok(subsec) = subsec_str.trim().parse::<u32>() {
+                        info.subsec = Some(subsec);
+                    }
+                }
+            }
+        }
+    }
+
+    // OffsetTimeOriginal (タイムゾーンオフセット) を取得
+    if let Some(field) = exif.get_field(Tag::OffsetTimeOriginal, In::PRIMARY) {
+        if let exif::Value::Ascii(ref vec) = field.value {
+            if let Some(offset_bytes) = vec.first() {
+                let offset_str = String::from_utf8_lossy(offset_bytes).trim().to_string();
+                if !offset_str.is_empty() {
+                    info.timezone = Some(offset_str);
+                }
+            }
+        }
+    }
+
+    // OffsetTime も試す（OffsetTimeOriginalがない場合）
+    if info.timezone.is_none() {
+        if let Some(field) = exif.get_field(Tag::OffsetTime, In::PRIMARY) {
+            if let exif::Value::Ascii(ref vec) = field.value {
+                if let Some(offset_bytes) = vec.first() {
+                    let offset_str = String::from_utf8_lossy(offset_bytes).trim().to_string();
+                    if !offset_str.is_empty() {
+                        info.timezone = Some(offset_str);
+                    }
+                }
+            }
+        }
+    }
+
+    // Orientation を取得
+    if let Some(field) = exif.get_field(Tag::Orientation, In::PRIMARY) {
+        if let exif::Value::Short(ref vec) = field.value {
+            if let Some(&orientation) = vec.first() {
+                info.orientation = Some(orientation as u32);
+            }
+        }
+    }
+
+    // 画像サイズを取得
+    if let Some(field) = exif.get_field(Tag::PixelXDimension, In::PRIMARY) {
+        if let exif::Value::Long(ref vec) = field.value {
+            if let Some(&width) = vec.first() {
+                info.width = Some(width);
+            }
+        }
+    }
+
+    if let Some(field) = exif.get_field(Tag::PixelYDimension, In::PRIMARY) {
+        if let exif::Value::Long(ref vec) = field.value {
+            if let Some(&height) = vec.first() {
+                info.height = Some(height);
+            }
+        }
+    }
+
+    Ok(info)
 }
 
-/// ファイルの作成/更新日時を取得（フォールバック）
-fn get_file_date(path: &Path) -> Result<DateTime<Local>> {
-    let metadata = fs::metadata(path)?;
+/// ファイル名から日付を抽出
+fn extract_date_from_filename(filename: &str) -> Option<DateTime<Local>> {
+    use regex::Regex;
 
-    // 作成日時を優先
-    if let Ok(created) = metadata.created() {
-        return Ok(DateTime::from(created));
+    // パターン1: YYYYMMDD_HHMMSS (最も一般的)
+    // 例: IMG_20250115_103000.jpg, Screenshot_20250115_103000.png
+    let re1 = Regex::new(r"(\d{4})(\d{2})(\d{2})[_-](\d{2})(\d{2})(\d{2})").ok()?;
+    if let Some(caps) = re1.captures(filename) {
+        let year: i32 = caps.get(1)?.as_str().parse().ok()?;
+        let month: u32 = caps.get(2)?.as_str().parse().ok()?;
+        let day: u32 = caps.get(3)?.as_str().parse().ok()?;
+        let hour: u32 = caps.get(4)?.as_str().parse().ok()?;
+        let minute: u32 = caps.get(5)?.as_str().parse().ok()?;
+        let second: u32 = caps.get(6)?.as_str().parse().ok()?;
+
+        if let Some(naive) = chrono::NaiveDate::from_ymd_opt(year, month, day)
+            .and_then(|d| d.and_hms_opt(hour, minute, second))
+        {
+            return Some(DateTime::from_naive_utc_and_offset(naive, *Local::now().offset()));
+        }
     }
 
-    // フォールバック: 更新日時
+    // パターン2: YYYY-MM-DD_HH-MM-SS
+    // 例: 2025-01-15_10-30-00.jpg
+    let re2 = Regex::new(r"(\d{4})-(\d{2})-(\d{2})[_T](\d{2})-(\d{2})-(\d{2})").ok()?;
+    if let Some(caps) = re2.captures(filename) {
+        let year: i32 = caps.get(1)?.as_str().parse().ok()?;
+        let month: u32 = caps.get(2)?.as_str().parse().ok()?;
+        let day: u32 = caps.get(3)?.as_str().parse().ok()?;
+        let hour: u32 = caps.get(4)?.as_str().parse().ok()?;
+        let minute: u32 = caps.get(5)?.as_str().parse().ok()?;
+        let second: u32 = caps.get(6)?.as_str().parse().ok()?;
+
+        if let Some(naive) = chrono::NaiveDate::from_ymd_opt(year, month, day)
+            .and_then(|d| d.and_hms_opt(hour, minute, second))
+        {
+            return Some(DateTime::from_naive_utc_and_offset(naive, *Local::now().offset()));
+        }
+    }
+
+    // パターン3: YYYYMMDDのみ（時刻なし）
+    // 例: IMG-20250115-WA0001.jpg (WhatsApp)
+    let re3 = Regex::new(r"(\d{4})(\d{2})(\d{2})").ok()?;
+    if let Some(caps) = re3.captures(filename) {
+        let year: i32 = caps.get(1)?.as_str().parse().ok()?;
+        let month: u32 = caps.get(2)?.as_str().parse().ok()?;
+        let day: u32 = caps.get(3)?.as_str().parse().ok()?;
+
+        if let Some(naive) = chrono::NaiveDate::from_ymd_opt(year, month, day)
+            .and_then(|d| d.and_hms_opt(0, 0, 0))
+        {
+            return Some(DateTime::from_naive_utc_and_offset(naive, *Local::now().offset()));
+        }
+    }
+
+    None
+}
+
+/// ファイルの作成日時を取得
+fn get_file_created_date(path: &Path) -> Result<DateTime<Local>> {
+    let metadata = fs::metadata(path)?;
+    let created = metadata.created()?;
+    Ok(DateTime::from(created))
+}
+
+/// ファイルの変更日時を取得
+fn get_file_modified_date(path: &Path) -> Result<DateTime<Local>> {
+    let metadata = fs::metadata(path)?;
     let modified = metadata.modified()?;
     Ok(DateTime::from(modified))
 }
 
-/// 日時からファイル名を生成（YYYYMMDD_HHmmss形式）
-fn format_filename(date: &DateTime<Local>, extension: &str) -> String {
-    format!("{}.{}", date.format("%Y%m%d_%H%M%S"), extension)
+/// 日時からファイル名を生成（YYYY-MM-DD_HH-mm-ss[-mmm]形式）
+fn format_filename(date: &DateTime<Local>, subsec: Option<u32>, extension: &str) -> String {
+    if let Some(ms) = subsec {
+        // ミリ秒がある場合は3桁で追加
+        format!("{}-{:03}.{}", date.format("%Y-%m-%d_%H-%M-%S"), ms, extension)
+    } else {
+        // ミリ秒がない場合は秒まで
+        format!("{}.{}", date.format("%Y-%m-%d_%H-%M-%S"), extension)
+    }
 }
 
 /// 対象ディレクトリ内のメディアファイルをスキャン
@@ -183,14 +380,37 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
         };
 
         if let Some(mtype) = media_type {
-            // EXIF日時 or ファイル日時を取得
-            let date_taken = get_exif_date(path)
-                .ok()
-                .flatten()
-                .or_else(|| get_file_date(path).ok());
+            // EXIF情報を取得
+            let exif_info = get_exif_info(path).ok().unwrap_or(ExifInfo {
+                date: None,
+                subsec: None,
+                timezone: None,
+                orientation: None,
+                width: None,
+                height: None,
+            });
+
+            // ファイル名を取得
+            let filename = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+
+            // 日付を決定（優先順位: EXIF > ファイル名 > ファイル作成日時 > ファイル変更日時）
+            let (date_taken, date_source, subsec) = if let Some(exif_date) = exif_info.date {
+                (Some(exif_date), DateSource::Exif, exif_info.subsec)
+            } else if let Some(filename_date) = extract_date_from_filename(filename) {
+                (Some(filename_date), DateSource::FileName, None)
+            } else if let Ok(created_date) = get_file_created_date(path) {
+                (Some(created_date), DateSource::FileCreated, None)
+            } else if let Ok(modified_date) = get_file_modified_date(path) {
+                (Some(modified_date), DateSource::FileModified, None)
+            } else {
+                (None, DateSource::None, None)
+            };
 
             if let Some(date) = date_taken {
-                let new_name = format_filename(&date, &extension);
+                let new_name = format_filename(&date, subsec, &extension);
                 let file_size = fs::metadata(path).ok().map(|m| m.len()).unwrap_or(0);
 
                 let info = MediaInfo {
@@ -202,11 +422,22 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
                         .to_string(),
                     media_type: mtype,
                     date_taken: Some(date),
+                    subsec_time: subsec,
+                    timezone: if date_source == DateSource::Exif {
+                        exif_info.timezone.clone()
+                    } else {
+                        None
+                    },
                     new_name,
                     new_path: PathBuf::new(),
                     file_size,
                     burst_group_id: None,
                     burst_index: None,
+                    date_source,
+                    exif_orientation: exif_info.orientation,
+                    rotation_applied: false, // スキャン時はまだ回転していない
+                    width: exif_info.width,
+                    height: exif_info.height,
                 };
 
                 media.lock().unwrap().push(info);
@@ -242,11 +473,15 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
                         .extension()
                         .and_then(|e| e.to_str())
                         .unwrap_or("jpg");
-                    media_info.new_name = format!("{}_{:02}.{}",
-                        format_filename(&date, "").trim_end_matches('.'),
-                        idx + 1,
-                        extension
-                    );
+
+                    // ベースファイル名を生成（拡張子なし）
+                    let base_name = if let Some(ms) = media_info.subsec_time {
+                        format!("{}-{:03}", date.format("%Y-%m-%d_%H-%M-%S"), ms)
+                    } else {
+                        date.format("%Y-%m-%d_%H-%M-%S").to_string()
+                    };
+
+                    media_info.new_name = format!("{}_{:02}.{}", base_name, idx + 1, extension);
                 }
             }
         }
@@ -255,11 +490,11 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
     Ok(result)
 }
 
-/// YYYY/YYYYMM/YYYYMMDD の階層構造を作成
+/// YYYY/YYYY-MM/YYYY-MM-DD の階層構造を作成
 fn create_date_hierarchy(output_dir: &Path, date: &DateTime<Local>) -> Result<PathBuf> {
     let year = date.format("%Y").to_string();
-    let year_month = date.format("%Y%m").to_string();
-    let year_month_day = date.format("%Y%m%d").to_string();
+    let year_month = date.format("%Y-%m").to_string();
+    let year_month_day = date.format("%Y-%m-%d").to_string();
 
     let target_dir = output_dir
         .join(&year)
@@ -329,12 +564,15 @@ pub fn process_media(input_dir: &Path, output_dir: &Path, options: &ProcessOptio
                     .extension()
                     .and_then(|e| e.to_str())
                     .unwrap_or("");
-                let new_name = format!(
-                    "{}_{:02}.{}",
-                    date.format("%Y%m%d_%H%M%S"),
-                    counter,
-                    extension
-                );
+
+                // ベースファイル名を生成（ミリ秒を含む場合と含まない場合）
+                let base_name = if let Some(ms) = item.subsec_time {
+                    format!("{}-{:03}", date.format("%Y-%m-%d_%H-%M-%S"), ms)
+                } else {
+                    date.format("%Y-%m-%d_%H-%M-%S").to_string()
+                };
+
+                let new_name = format!("{}_{:02}.{}", base_name, counter, extension);
                 target_path = target_dir.join(&new_name);
                 counter += 1;
             }
