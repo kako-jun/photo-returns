@@ -226,8 +226,12 @@ export function ProcessingFlow({ media }: { media: MediaInfo }) {
   return (
     <>
       <div className="p-6 border-t-2 border-blue-500 dark:border-blue-400">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Processing Flow</h3>
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">Processing Flow</h3>
+        <div className="grid grid-cols-2 gap-6">
+          <div>{renderStepColumn(leftSteps, 0)}</div>
+          <div>{renderStepColumn(rightSteps, midPoint)}</div>
+        </div>
+        <div className="flex justify-end mt-4">
           <button
             onClick={() => setShowLogViewer(true)}
             className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center gap-2 text-xs font-semibold shadow-sm hover:shadow-md"
@@ -236,10 +240,6 @@ export function ProcessingFlow({ media }: { media: MediaInfo }) {
             <HiDocumentText className="w-4 h-4" />
             View Logs ({media.logs?.length || 0})
           </button>
-        </div>
-        <div className="grid grid-cols-2 gap-6">
-          <div>{renderStepColumn(leftSteps, 0)}</div>
-          <div>{renderStepColumn(rightSteps, midPoint)}</div>
         </div>
       </div>
 

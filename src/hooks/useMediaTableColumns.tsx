@@ -71,8 +71,8 @@ export function useMediaTableColumns({
         size: 50,
       }),
       columnHelper.display({
-        id: "preview",
-        header: "Preview",
+        id: "before",
+        header: "Before",
         cell: (info) => {
           const mediaType = info.row.original.media_type;
           const originalPath = info.row.original.original_path;
@@ -439,6 +439,99 @@ export function useMediaTableColumns({
           );
         },
         size: 100,
+      }),
+      columnHelper.display({
+        id: "after",
+        header: "After",
+        cell: (info) => {
+          const media = info.row.original;
+          const mediaType = media.media_type;
+          const originalPath = media.original_path;
+          const { exif_orientation } = media;
+          const rotationMode = media.rotation_mode ?? (exif_orientation && exif_orientation !== 1 ? "exif" : "none");
+
+          // 回転角度を計算
+          const getRotationDegrees = (): number => {
+            if (rotationMode === "none") return 0;
+            if (rotationMode === "exif" && exif_orientation) {
+              switch (exif_orientation) {
+                case 1: return 0;
+                case 3: return 180;
+                case 6: return 90;
+                case 8: return 270;
+                default: return 0;
+              }
+            }
+            if (rotationMode === "90") return 90;
+            if (rotationMode === "180") return 180;
+            if (rotationMode === "270") return 270;
+            return 0;
+          };
+
+          const degrees = getRotationDegrees();
+
+          // 回転がない場合は「-」を表示
+          if (degrees === 0) {
+            return (
+              <div className="w-16 h-16 flex items-center justify-center text-gray-400 dark:text-gray-500">
+                <span className="text-xs">-</span>
+              </div>
+            );
+          }
+
+          if (isMockMode) {
+            // モックモードではアイコンを回転表示
+            if (mediaType === "Photo") {
+              return (
+                <div
+                  className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center"
+                  style={{ transform: `rotate(${degrees}deg)` }}
+                >
+                  <HiPhoto className="w-8 h-8 text-gray-400" />
+                </div>
+              );
+            } else {
+              return (
+                <div
+                  className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center"
+                  style={{ transform: `rotate(${degrees}deg)` }}
+                >
+                  <HiFilm className="w-8 h-8 text-gray-400" />
+                </div>
+              );
+            }
+          }
+
+          if (mediaType === "Photo") {
+            const assetUrl = convertFileSrc(originalPath);
+            return (
+              <div className="w-16 h-16 flex items-center justify-center">
+                <img
+                  src={assetUrl}
+                  alt="rotated preview"
+                  className="object-cover rounded border border-gray-300 dark:border-gray-600"
+                  style={{
+                    transform: `rotate(${degrees}deg)`,
+                    width: '64px',
+                    height: '64px',
+                  }}
+                  loading="lazy"
+                />
+              </div>
+            );
+          } else {
+            // 動画の場合はアイコンを回転表示
+            return (
+              <div
+                className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center border border-gray-300 dark:border-gray-600"
+                style={{ transform: `rotate(${degrees}deg)` }}
+              >
+                <HiFilm className="w-8 h-8 text-purple-600 dark:text-purple-400" />
+              </div>
+            );
+          }
+        },
+        size: 80,
       }),
       columnHelper.accessor("new_name", {
         header: "New Name",
