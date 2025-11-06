@@ -19,6 +19,11 @@ export interface MediaInfo {
   date_taken: string | null;
   subsec_time: number | null; // ミリ秒（0-999）
   timezone: string | null; // タイムゾーンオフセット（例："+09:00", null=TZ情報なし）
+  // 利用可能な日付候補（ユーザー選択用）
+  exif_date: string | null;
+  filename_date: string | null;
+  file_created_date: string | null;
+  file_modified_date: string | null;
   new_name: string;
   new_path: string;
   file_size: number;
@@ -27,6 +32,10 @@ export interface MediaInfo {
   date_source: "Exif" | "FileName" | "FileCreated" | "FileModified" | "None";
   exif_orientation: number | null;
   rotation_applied: boolean;
+  // ユーザー選択：TZオフセット補正（例："+09:00", "none"）
+  timezone_offset?: string;
+  // ユーザー選択：回転方法（"none", "exif", "90", "180", "270"）
+  rotation_mode?: "none" | "exif" | "90" | "180" | "270";
   width: number | null;
   height: number | null;
   progress?: number; // 進捗（0-100）
@@ -224,16 +233,24 @@ function App() {
         const rowIndex = info.row.index;
 
         if (MOCK_ENABLED) {
-          // モックモードでは画像を表示しない
-          return (
-            <div className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center">
-              {mediaType === "Photo" ? (
+          // モックモードでもクリック可能に
+          if (mediaType === "Photo") {
+            return (
+              <button
+                onClick={() => setLightboxIndex(rowIndex)}
+                className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="Click to view details (mock mode)"
+              >
                 <HiPhoto className="w-8 h-8 text-gray-400" />
-              ) : (
+              </button>
+            );
+          } else {
+            return (
+              <div className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center">
                 <HiFilm className="w-8 h-8 text-gray-400" />
-              )}
-            </div>
-          );
+              </div>
+            );
+          }
         }
 
         if (mediaType === "Photo") {
@@ -313,7 +330,32 @@ function App() {
     columnHelper.accessor("date_source", {
       header: "Date Source",
       cell: (info) => {
-        const source = info.getValue();
+        const media = info.row.original;
+        const currentSource = info.getValue();
+
+        // 利用可能な候補を構築
+        const availableSources: Array<{ value: string; label: string; date: string | null }> = [];
+        if (media.exif_date) availableSources.push({ value: "Exif", label: "EXIF", date: media.exif_date });
+        if (media.filename_date) availableSources.push({ value: "FileName", label: "FileName", date: media.filename_date });
+        if (media.file_created_date) availableSources.push({ value: "FileCreated", label: "Created", date: media.file_created_date });
+        if (media.file_modified_date) availableSources.push({ value: "FileModified", label: "Modified", date: media.file_modified_date });
+
+        const handleSourceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+          const newSource = e.target.value;
+          const selectedOption = availableSources.find(s => s.value === newSource);
+
+          if (selectedOption && selectedOption.date) {
+            // mediaListを更新
+            setMediaList(prevList =>
+              prevList.map((item, idx) =>
+                idx === info.row.index
+                  ? { ...item, date_source: newSource as any, date_taken: selectedOption.date }
+                  : item
+              )
+            );
+          }
+        };
+
         const sourceColors = {
           Exif: "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300",
           FileName: "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300",
@@ -321,54 +363,142 @@ function App() {
           FileModified: "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300",
           None: "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300",
         };
-        const displayText = {
-          Exif: "EXIF",
-          FileName: "FileName",
-          FileCreated: "Created",
-          FileModified: "Modified",
-          None: "None",
-        };
+
         return (
-          <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${sourceColors[source]}`}>
-            {displayText[source]}
-          </span>
+          <select
+            value={currentSource}
+            onChange={handleSourceChange}
+            className={`px-2 py-1 rounded text-xs font-semibold cursor-pointer border border-gray-300 dark:border-gray-600 ${sourceColors[currentSource]}`}
+          >
+            {availableSources.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+            {availableSources.length === 0 && <option value="None">None</option>}
+          </select>
         );
       },
-      size: 110,
+      size: 120,
     }),
     columnHelper.accessor("date_taken", {
       header: "Date Taken",
       cell: (info) => {
         const date = info.getValue();
+        const media = info.row.original;
+        const exifTimezone = media.timezone; // EXIF由来のTZ（参考表示用）
+        const selectedOffset = media.timezone_offset ?? "none"; // ユーザー選択のオフセット
+
         if (!date) return <span className="text-gray-900 dark:text-gray-100">N/A</span>;
 
-        const d = new Date(date);
+        let d = new Date(date);
+
+        // ユーザーが選択したTZオフセットを適用
+        let offsetToUse = selectedOffset;
+        if (selectedOffset === "exif" && exifTimezone) {
+          // EXIFが選ばれていて、EXIF TZ情報がある場合はそれを使う
+          offsetToUse = exifTimezone;
+        }
+
+        if (offsetToUse !== "none" && offsetToUse !== "exif") {
+          const match = offsetToUse.match(/([+-])(\d{2}):(\d{2})/);
+          if (match) {
+            const sign = match[1] === '+' ? 1 : -1;
+            const hours = parseInt(match[2], 10);
+            const minutes = parseInt(match[3], 10);
+            const offsetMinutes = sign * (hours * 60 + minutes);
+
+            // 日本時間は UTC+9 = +540分
+            const japanOffsetMinutes = 540;
+            const diffMinutes = japanOffsetMinutes - offsetMinutes;
+
+            // 差分を適用
+            d = new Date(d.getTime() + diffMinutes * 60 * 1000);
+          }
+        }
+
         const formatted = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-        const timezone = info.row.original.timezone;
-        const tzDisplay = timezone ? (
-          <span className="text-xs text-blue-600 dark:text-blue-400 ml-1" title="Timezone from EXIF">
-            {timezone}
-          </span>
-        ) : (
-          <span className="text-xs text-gray-400 dark:text-gray-500 ml-1" title="No timezone information">
-            (no TZ)
-          </span>
-        );
+
+        const handleOffsetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+          setMediaList(prevList =>
+            prevList.map((item, idx) =>
+              idx === info.row.index
+                ? { ...item, timezone_offset: e.target.value }
+                : item
+            )
+          );
+        };
+
         return (
-          <div className="flex items-center">
-            <span className="text-gray-900 dark:text-gray-100 font-mono">{formatted}</span>
-            {tzDisplay}
+          <div className="flex flex-col gap-1">
+            <span className="text-gray-900 dark:text-gray-100 font-mono text-xs">{formatted}</span>
+            {exifTimezone && (
+              <span className="text-xs text-gray-400 dark:text-gray-500" title="EXIF Timezone (reference only)">
+                EXIF: {exifTimezone}
+              </span>
+            )}
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-gray-600 dark:text-gray-400">補正:</span>
+              <select
+                value={selectedOffset}
+                onChange={handleOffsetChange}
+                className="w-20 px-1 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
+              >
+                <option value="none">なし</option>
+                <option value="exif">EXIF</option>
+                <option value="-12:00">-12:00</option>
+                <option value="-11:00">-11:00</option>
+                <option value="-10:00">-10:00</option>
+                <option value="-09:00">-09:00</option>
+                <option value="-08:00">-08:00</option>
+                <option value="-07:00">-07:00</option>
+                <option value="-06:00">-06:00</option>
+                <option value="-05:00">-05:00</option>
+                <option value="-04:00">-04:00</option>
+                <option value="-03:00">-03:00</option>
+                <option value="-02:00">-02:00</option>
+                <option value="-01:00">-01:00</option>
+                <option value="+00:00">+00:00</option>
+                <option value="+01:00">+01:00</option>
+                <option value="+02:00">+02:00</option>
+                <option value="+03:00">+03:00</option>
+                <option value="+04:00">+04:00</option>
+                <option value="+05:00">+05:00</option>
+                <option value="+06:00">+06:00</option>
+                <option value="+07:00">+07:00</option>
+                <option value="+08:00">+08:00</option>
+                <option value="+09:00">+09:00</option>
+                <option value="+10:00">+10:00</option>
+                <option value="+11:00">+11:00</option>
+                <option value="+12:00">+12:00</option>
+                <option value="+13:00">+13:00</option>
+                <option value="+14:00">+14:00</option>
+              </select>
+            </div>
           </div>
         );
       },
-      size: 230,
+      size: 200,
     }),
     columnHelper.display({
       id: "resolution",
       header: "Resolution",
       cell: (info) => {
-        const { width, height } = info.row.original;
-        if (!width || !height) return <span className="text-gray-400 dark:text-gray-500 text-xs">-</span>;
+        const { width, height, file_size } = info.row.original;
+
+        // ファイルサイズのフォーマット
+        const formattedSize = file_size > 1024 * 1024
+          ? `${(file_size / (1024 * 1024)).toFixed(1)} MB`
+          : `${(file_size / 1024).toFixed(1)} KB`;
+
+        if (!width || !height) {
+          return (
+            <div className="flex flex-col gap-0.5">
+              <span className="text-gray-400 dark:text-gray-500 text-xs">-</span>
+              <span className="text-gray-600 dark:text-gray-400 text-xs">{formattedSize}</span>
+            </div>
+          );
+        }
 
         // アスペクト比を判定
         const isPortrait = height > width;
@@ -376,11 +506,14 @@ function App() {
         const isLandscape = width > height;
 
         return (
-          <div className="flex items-center gap-1">
-            {isPortrait && <HiOutlineBars3 className="w-4 h-4 text-blue-600 dark:text-blue-400 rotate-90" title="Portrait" />}
-            {isLandscape && <HiOutlineBars3 className="w-4 h-4 text-purple-600 dark:text-purple-400" title="Landscape" />}
-            {isSquare && <HiOutlineSquare3Stack3D className="w-4 h-4 text-green-600 dark:text-green-400" title="Square" />}
-            <span className="text-gray-900 dark:text-gray-100 text-xs font-mono">{width}×{height}</span>
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-1">
+              {isPortrait && <HiOutlineBars3 className="w-4 h-4 text-blue-600 dark:text-blue-400 rotate-90" title="Portrait" />}
+              {isLandscape && <HiOutlineBars3 className="w-4 h-4 text-purple-600 dark:text-purple-400" title="Landscape" />}
+              {isSquare && <HiOutlineSquare3Stack3D className="w-4 h-4 text-green-600 dark:text-green-400" title="Square" />}
+              <span className="text-gray-900 dark:text-gray-100 text-xs font-mono">{width}×{height}</span>
+            </div>
+            <span className="text-gray-600 dark:text-gray-400 text-xs">{formattedSize}</span>
           </div>
         );
       },
@@ -388,30 +521,44 @@ function App() {
     }),
     columnHelper.display({
       id: "rotation",
-      header: "Rotated",
+      header: "Rotate",
       cell: (info) => {
-        const { rotation_applied, exif_orientation } = info.row.original;
-        if (!exif_orientation || exif_orientation === 1) {
-          return <span className="text-gray-400 dark:text-gray-500">-</span>;
-        }
+        const media = info.row.original;
+        const { exif_orientation } = media;
+        const rotationMode = media.rotation_mode ?? (exif_orientation && exif_orientation !== 1 ? "exif" : "none");
+
+        const handleRotationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+          setMediaList(prevList =>
+            prevList.map((item, idx) =>
+              idx === info.row.index
+                ? { ...item, rotation_mode: e.target.value as any }
+                : item
+            )
+          );
+        };
+
         return (
-          <span className={`text-xs ${rotation_applied ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'}`}>
-            {rotation_applied ? '✓' : `Orient ${exif_orientation}`}
-          </span>
+          <div className="flex flex-col gap-1">
+            {exif_orientation && exif_orientation !== 1 && (
+              <span className="text-xs text-gray-400 dark:text-gray-500" title="EXIF Orientation (reference only)">
+                EXIF: Orient {exif_orientation}
+              </span>
+            )}
+            <select
+              value={rotationMode}
+              onChange={handleRotationChange}
+              className="w-20 px-1 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 cursor-pointer"
+            >
+              <option value="none">なし</option>
+              <option value="exif">EXIF</option>
+              <option value="90">90°</option>
+              <option value="180">180°</option>
+              <option value="270">270°</option>
+            </select>
+          </div>
         );
       },
-      size: 80,
-    }),
-    columnHelper.accessor("file_size", {
-      header: "Size",
-      cell: (info) => {
-        const size = info.getValue();
-        const formatted = size > 1024 * 1024
-          ? `${(size / (1024 * 1024)).toFixed(1)} MB`
-          : `${(size / 1024).toFixed(1)} KB`;
-        return <span className="text-gray-900 dark:text-gray-100 text-xs">{formatted}</span>;
-      },
-      size: 90,
+      size: 100,
     }),
     columnHelper.accessor("new_name", {
       header: "New Name",
@@ -675,7 +822,8 @@ function App() {
       {/* LightBox Modal */}
       {lightboxIndex !== null && mediaList[lightboxIndex] && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90"
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
           onClick={() => setLightboxIndex(null)}
         >
           <button
@@ -716,17 +864,43 @@ function App() {
             className="max-w-[90vw] max-h-[90vh] flex flex-col items-center"
             onClick={(e) => e.stopPropagation()}
           >
-            <img
-              src={convertFileSrc(mediaList[lightboxIndex].original_path)}
-              alt={mediaList[lightboxIndex].file_name}
-              className="max-w-full max-h-[80vh] object-contain rounded shadow-2xl"
-            />
-            <div className="mt-4 text-center text-white bg-black bg-opacity-70 px-4 py-2 rounded">
-              <p className="font-semibold">{mediaList[lightboxIndex].file_name}</p>
-              <p className="text-sm text-gray-300">
-                {lightboxIndex + 1} / {mediaList.length}
-              </p>
-            </div>
+            {MOCK_ENABLED ? (
+              // モックモード：画像の代わりに情報を表示
+              <div className="bg-gray-800 rounded-lg p-8 shadow-2xl">
+                <HiPhoto className="w-32 h-32 text-gray-400 mx-auto mb-4" />
+                <div className="text-white space-y-2">
+                  <p className="font-semibold text-xl">{mediaList[lightboxIndex].file_name}</p>
+                  <p className="text-gray-300">Type: {mediaList[lightboxIndex].media_type}</p>
+                  <p className="text-gray-300">Size: {(mediaList[lightboxIndex].file_size / (1024 * 1024)).toFixed(2)} MB</p>
+                  {mediaList[lightboxIndex].width && mediaList[lightboxIndex].height && (
+                    <p className="text-gray-300">
+                      Resolution: {mediaList[lightboxIndex].width} × {mediaList[lightboxIndex].height}
+                    </p>
+                  )}
+                  <p className="text-sm text-gray-400 mt-4">
+                    {lightboxIndex + 1} / {mediaList.length}
+                  </p>
+                  <p className="text-xs text-yellow-400 mt-2">
+                    🎨 Mock Mode: Image preview not available
+                  </p>
+                </div>
+              </div>
+            ) : (
+              // 実際のモード：画像を表示
+              <>
+                <img
+                  src={convertFileSrc(mediaList[lightboxIndex].original_path)}
+                  alt={mediaList[lightboxIndex].file_name}
+                  className="max-w-full max-h-[80vh] object-contain rounded shadow-2xl"
+                />
+                <div className="mt-4 text-center text-white bg-black bg-opacity-70 px-4 py-2 rounded">
+                  <p className="font-semibold">{mediaList[lightboxIndex].file_name}</p>
+                  <p className="text-sm text-gray-300">
+                    {lightboxIndex + 1} / {mediaList.length}
+                  </p>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
