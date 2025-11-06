@@ -1,5 +1,7 @@
-import { HiCheckCircle, HiXCircle, HiMinusCircle } from "react-icons/hi2";
+import { useState } from "react";
+import { HiCheckCircle, HiXCircle, HiMinusCircle, HiDocumentText } from "react-icons/hi2";
 import type { MediaInfo } from "../types";
+import { LogViewer } from "./LogViewer";
 
 // EXIF orientationを角度に変換
 function getOrientationDegrees(orientation: number | null): string | null {
@@ -15,6 +17,7 @@ function getOrientationDegrees(orientation: number | null): string | null {
 
 // 処理フロー表示コンポーネント
 export function ProcessingFlow({ media }: { media: MediaInfo }) {
+  const [showLogViewer, setShowLogViewer] = useState(false);
   const isError = media.status === "error";
   const isCompleted = media.status === "completed";
   const isProcessing = media.status === "processing";
@@ -221,12 +224,32 @@ export function ProcessingFlow({ media }: { media: MediaInfo }) {
   };
 
   return (
-    <div className="p-6 border-t-2 border-blue-500 dark:border-blue-400">
-      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">Processing Flow</h3>
-      <div className="grid grid-cols-2 gap-6">
-        <div>{renderStepColumn(leftSteps, 0)}</div>
-        <div>{renderStepColumn(rightSteps, midPoint)}</div>
+    <>
+      <div className="p-6 border-t-2 border-blue-500 dark:border-blue-400">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Processing Flow</h3>
+          <button
+            onClick={() => setShowLogViewer(true)}
+            className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center gap-2 text-xs font-semibold shadow-sm hover:shadow-md"
+            title="View detailed processing logs"
+          >
+            <HiDocumentText className="w-4 h-4" />
+            View Logs ({media.logs?.length || 0})
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-6">
+          <div>{renderStepColumn(leftSteps, 0)}</div>
+          <div>{renderStepColumn(rightSteps, midPoint)}</div>
+        </div>
       </div>
-    </div>
+
+      {showLogViewer && (
+        <LogViewer
+          logs={media.logs || []}
+          fileName={media.file_name}
+          onClose={() => setShowLogViewer(false)}
+        />
+      )}
+    </>
   );
 }

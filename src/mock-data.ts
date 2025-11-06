@@ -29,6 +29,7 @@ export const mockMediaList: MediaInfo[] = [
     height: 3024,
     progress: 0,
     status: "pending",
+    logs: [],
   },
   {
     original_path: "C:\\Photos\\IMG_0002.jpg",
@@ -55,6 +56,7 @@ export const mockMediaList: MediaInfo[] = [
     height: 4032,
     progress: 100,
     status: "completed",
+    logs: [{ timestamp: "2025-01-15 12:30:45.123", level: "Info" as const, message: "Processing started: IMG_0002.jpg" }, { timestamp: "2025-01-15 12:30:45.234", level: "Info" as const, message: "Created directory: C:\\\\Output\\\\2025\\\\202501\\\\20250115" }, { timestamp: "2025-01-15 12:30:45.345", level: "Info" as const, message: "File copied successfully" }],
   },
   {
     original_path: "C:\\Photos\\IMG_0003.jpg",
@@ -81,6 +83,7 @@ export const mockMediaList: MediaInfo[] = [
     height: 3024,
     progress: 100,
     status: "completed",
+    logs: [{ timestamp: "2025-01-15 12:30:45.123", level: "Info" as const, message: "Processing started: IMG_0002.jpg" }, { timestamp: "2025-01-15 12:30:45.234", level: "Info" as const, message: "Created directory: C:\\\\Output\\\\2025\\\\202501\\\\20250115" }, { timestamp: "2025-01-15 12:30:45.345", level: "Info" as const, message: "File copied successfully" }],
   },
   {
     original_path: "C:\\Photos\\IMG_20250116_142230.jpg",
@@ -107,6 +110,7 @@ export const mockMediaList: MediaInfo[] = [
     height: 3000,
     progress: 75,
     status: "processing",
+    logs: [{ timestamp: "2025-01-16 14:25:00.123", level: "Info" as const, message: "Processing started: IMG_20250116_142230.jpg" }, { timestamp: "2025-01-16 14:25:00.234", level: "Info" as const, message: "Backup created successfully" }],
   },
   {
     original_path: "C:\\Photos\\OLD_PHOTO.jpg",
@@ -133,6 +137,7 @@ export const mockMediaList: MediaInfo[] = [
     height: 2160,
     progress: 100,
     status: "completed",
+    logs: [{ timestamp: "2025-01-15 12:30:45.123", level: "Info" as const, message: "Processing started: IMG_0002.jpg" }, { timestamp: "2025-01-15 12:30:45.234", level: "Info" as const, message: "Created directory: C:\\\\Output\\\\2025\\\\202501\\\\20250115" }, { timestamp: "2025-01-15 12:30:45.345", level: "Info" as const, message: "File copied successfully" }],
   },
   {
     original_path: "C:\\Photos\\VID_0001.mp4",
@@ -159,6 +164,7 @@ export const mockMediaList: MediaInfo[] = [
     height: 1080,
     progress: 50,
     status: "processing",
+    logs: [{ timestamp: "2025-01-17 09:20:00.123", level: "Info" as const, message: "Processing started: VID_0001.mp4" }, { timestamp: "2025-01-17 09:20:00.234", level: "Info" as const, message: "Backup created successfully" }, { timestamp: "2025-01-17 09:20:00.345", level: "Info" as const, message: "Created directory: C:\\\\Output\\\\2025\\\\202501\\\\20250117" }],
   },
   {
     original_path: "C:\\Photos\\SQUARE_IMG.jpg",
@@ -185,6 +191,7 @@ export const mockMediaList: MediaInfo[] = [
     height: 2048,
     progress: 100,
     status: "completed",
+    logs: [{ timestamp: "2025-01-15 12:30:45.123", level: "Info" as const, message: "Processing started: IMG_0002.jpg" }, { timestamp: "2025-01-15 12:30:45.234", level: "Info" as const, message: "Created directory: C:\\\\Output\\\\2025\\\\202501\\\\20250115" }, { timestamp: "2025-01-15 12:30:45.345", level: "Info" as const, message: "File copied successfully" }],
   },
   {
     original_path: "C:\\Photos\\IMG_9999.jpg",
@@ -211,6 +218,7 @@ export const mockMediaList: MediaInfo[] = [
     height: null,
     progress: 0,
     status: "error",
+    logs: [{ timestamp: "2025-01-15 12:35:00.123", level: "Info" as const, message: "Processing started" }, { timestamp: "2025-01-15 12:35:00.234", level: "Error" as const, message: "Failed to copy file: Permission denied" }],
     error_message: "No EXIF date found",
   },
 ];
