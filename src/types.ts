@@ -1,3 +1,13 @@
+// Log level enum
+export type LogLevel = "Info" | "Warning" | "Error";
+
+// Log entry structure
+export interface LogEntry {
+  timestamp: string;
+  level: LogLevel;
+  message: string;
+}
+
 // Rust側のMediaInfo型に対応
 export interface MediaInfo {
   original_path: string;
@@ -28,6 +38,7 @@ export interface MediaInfo {
   progress?: number; // 進捗（0-100）
   status?: "pending" | "processing" | "completed" | "error" | "no_change";
   error_message?: string;
+  logs: LogEntry[]; // 処理ログ
 }
 
 export interface ProcessResult {

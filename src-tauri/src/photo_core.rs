@@ -65,6 +65,22 @@ pub enum DateSource {
     None,
 }
 
+/// ログレベル
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LogLevel {
+    Info,
+    Warning,
+    Error,
+}
+
+/// ログエントリ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogEntry {
+    pub timestamp: String,
+    pub level: LogLevel,
+    pub message: String,
+}
+
 /// メディアファイル情報
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MediaInfo {
@@ -96,6 +112,8 @@ pub struct MediaInfo {
     pub width: Option<u32>,
     /// 画像の高さ（ピクセル）
     pub height: Option<u32>,
+    /// 処理ログ
+    pub logs: Vec<LogEntry>,
 }
 
 /// 処理結果
@@ -106,6 +124,18 @@ pub struct ProcessResult {
     pub processed_files: usize,
     pub media: Vec<MediaInfo>,
     pub errors: Vec<String>,
+}
+
+/// ログエントリを追加するヘルパー
+impl MediaInfo {
+    fn add_log(&mut self, level: LogLevel, message: impl Into<String>) {
+        let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+        self.logs.push(LogEntry {
+            timestamp,
+            level,
+            message: message.into(),
+        });
+    }
 }
 
 /// 画像拡張子のチェック
@@ -476,6 +506,7 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
                     rotation_applied: false, // スキャン時はまだ回転していない
                     width: video_meta.as_ref().map(|v| v.width).or(exif_info.width),
                     height: video_meta.as_ref().map(|v| v.height).or(exif_info.height),
+                    logs: Vec::new(), // ログは空で初期化
                 };
 
                 media.lock().unwrap().push(info);
@@ -567,27 +598,30 @@ pub fn process_media(input_dir: &Path, output_dir: &Path, options: &ProcessOptio
 
     let processor = |item: &mut MediaInfo| {
         if let Some(date) = item.date_taken {
+            item.add_log(LogLevel::Info, format!("Processing started: {}", item.file_name));
+
             // バックアップ作成
             if let Some(ref backup_dir) = options.backup_dir {
                 if let Err(e) = create_backup(&item.original_path, backup_dir) {
-                    errors.lock().unwrap().push(format!(
-                        "Failed to backup {}: {}",
-                        item.original_path.display(),
-                        e
-                    ));
+                    let msg = format!("Failed to backup {}: {}", item.original_path.display(), e);
+                    item.add_log(LogLevel::Error, &msg);
+                    errors.lock().unwrap().push(msg);
                     return;
+                } else {
+                    item.add_log(LogLevel::Info, "Backup created successfully");
                 }
             }
 
             // 出力ディレクトリ作成
             let target_dir = match create_date_hierarchy(output_dir, &date) {
-                Ok(dir) => dir,
+                Ok(dir) => {
+                    item.add_log(LogLevel::Info, format!("Created directory: {}", dir.display()));
+                    dir
+                },
                 Err(e) => {
-                    errors.lock().unwrap().push(format!(
-                        "Failed to create directory for {}: {}",
-                        item.original_path.display(),
-                        e
-                    ));
+                    let msg = format!("Failed to create directory for {}: {}", item.original_path.display(), e);
+                    item.add_log(LogLevel::Error, &msg);
+                    errors.lock().unwrap().push(msg);
                     return;
                 }
             };
@@ -615,18 +649,21 @@ pub fn process_media(input_dir: &Path, output_dir: &Path, options: &ProcessOptio
                 counter += 1;
             }
 
+            if counter > 1 {
+                item.add_log(LogLevel::Warning, format!("File name conflict detected, using counter: {}", counter - 1));
+            }
+
             // ファイルをコピー
             match fs::copy(&item.original_path, &target_path) {
                 Ok(_) => {
-                    item.new_path = target_path;
+                    item.new_path = target_path.clone();
+                    item.add_log(LogLevel::Info, format!("File copied successfully to: {}", target_path.display()));
                     *success_count.lock().unwrap() += 1;
                 }
                 Err(e) => {
-                    errors.lock().unwrap().push(format!(
-                        "Failed to copy {}: {}",
-                        item.original_path.display(),
-                        e
-                    ));
+                    let msg = format!("Failed to copy {}: {}", item.original_path.display(), e);
+                    item.add_log(LogLevel::Error, &msg);
+                    errors.lock().unwrap().push(msg);
                 }
             }
         }
