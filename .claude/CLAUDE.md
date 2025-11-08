@@ -297,20 +297,14 @@ cd src-tauri && cargo test   # Rust テスト実行
 
 **手動でリリースを作成:**
 1. GitHubリポジトリの「Actions」タブを開く
-2. 「Build and Release」ワークフローを選択
+2. 「Release Build」ワークフローを選択
 3. 「Run workflow」をクリック
 4. バージョン番号を入力（例: `v0.1.0`）
 5. 「Run workflow」で実行
 
-**タグプッシュで自動リリース:**
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
 **ビルド成果物:**
 - **Windows**: `.msi` および `.exe` インストーラー
-- **macOS**: `.dmg` ファイル（ARM64, Intel, Universal）
+- **macOS**: `.dmg` ファイル（Universal - ARM64 + Intel両対応）
 - **Linux**: `.AppImage` および `.deb` パッケージ
 
 リリースはドラフトとして作成されるため、公開前に内容を確認・編集できます。
