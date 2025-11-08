@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "photo-returns-temp",
+  "productName": "PhotoReturns",
   "version": "0.1.0",
-  "identifier": "com.tauri-app.photo-returns-temp",
+  "identifier": "com.kako-jun.photo-returns",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,9 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "photo-returns-temp",
-        "width": 800,
-        "height": 600
+        "title": "PhotoReturns - Take back your memories",
+        "width": 1400,
+        "height": 900
       }
     ],
     "security": {

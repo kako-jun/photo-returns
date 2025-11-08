@@ -1,0 +1,135 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v0.1.0)'
+        required: true
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            target: 'aarch64-apple-darwin'
+            args: '--target aarch64-apple-darwin'
+          - platform: 'macos-latest'
+            target: 'x86_64-apple-darwin'
+            args: '--target x86_64-apple-darwin'
+          - platform: 'ubuntu-22.04'
+            target: 'x86_64-unknown-linux-gnu'
+            args: ''
+          - platform: 'windows-latest'
+            target: 'x86_64-pc-windows-msvc'
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install dependencies (Ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.event.inputs.version || github.ref_name }}
+          releaseName: 'PhotoReturns ${{ github.event.inputs.version || github.ref_name }}'
+          releaseBody: |
+            PhotoReturns - Take back your memories
+
+            ## What's Changed
+            See the commit history for detailed changes.
+
+            ## Installation
+            - **Windows**: Download and run the `.msi` or `.exe` installer
+            - **macOS**: Download the `.dmg` file, open it, and drag PhotoReturns to Applications
+            - **Linux**: Download the `.AppImage`, make it executable (`chmod +x`), and run it
+
+            ## Notes
+            - macOS: You may need to right-click and select "Open" the first time due to Gatekeeper
+            - Linux: You may need to install system dependencies (libwebkit2gtk-4.1)
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  create-universal-macos:
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create universal binary
+        run: |
+          # Get release version
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+
+          # Find the ARM64 and x86_64 .app bundles
+          ARM64_APP=$(find artifacts -name "PhotoReturns.app" -path "*aarch64*" | head -1)
+          X86_64_APP=$(find artifacts -name "PhotoReturns.app" -path "*x86_64*" | head -1)
+
+          if [ -n "$ARM64_APP" ] && [ -n "$X86_64_APP" ]; then
+            # Create universal binary using lipo
+            mkdir -p universal
+            cp -r "$ARM64_APP" universal/PhotoReturns.app
+
+            # Combine binaries
+            lipo -create \
+              "$ARM64_APP/Contents/MacOS/photo-returns" \
+              "$X86_64_APP/Contents/MacOS/photo-returns" \
+              -output universal/PhotoReturns.app/Contents/MacOS/photo-returns
+
+            # Create DMG
+            hdiutil create -volname "PhotoReturns" -srcfolder universal/PhotoReturns.app \
+              -ov -format UDZO "PhotoReturns_${VERSION}_universal.dmg"
+
+            echo "Universal binary created successfully"
+          else
+            echo "Could not find both ARM64 and x86_64 builds"
+            exit 1
+          fi
+
+      - name: Upload universal DMG to release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          files: PhotoReturns_*.dmg
+          draft: true
