@@ -43,6 +43,7 @@ export function useMediaTableColumns({
   setMediaList,
   isMockMode,
 }: UseMediaTableColumnsProps) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return useMemo<ColumnDef<MediaInfo, any>[]>(
     () => [
       columnHelper.display({
