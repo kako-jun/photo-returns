@@ -1,6 +1,9 @@
 name: Release Build
 
 on:
+  push:
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
     inputs:
       version:
@@ -67,8 +70,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.event.inputs.version }}
-          releaseName: 'PhotoReturns ${{ github.event.inputs.version }}'
+          tagName: ${{ github.event.inputs.version || github.ref_name }}
+          releaseName: 'PhotoReturns ${{ github.event.inputs.version || github.ref_name }}'
           releaseBody: |
             PhotoReturns - Take back your memories
 
