@@ -25,3 +25,5 @@ dist-ssr
 
 # Windows null device file
 nul
+.serena/
+.claude/settings.local.json
