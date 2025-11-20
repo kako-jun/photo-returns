@@ -189,7 +189,7 @@ function App() {
 
         const preferredDate = getDateForSource(preferredDateSource);
         if (preferredDate) {
-          finalDateSource = preferredDateSource as any;
+          finalDateSource = preferredDateSource as MediaInfo['date_source'];
           finalDateTaken = preferredDate;
         }
 

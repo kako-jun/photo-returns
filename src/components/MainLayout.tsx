@@ -1,4 +1,4 @@
-import { Table, flexRender } from '@tanstack/react-table';
+import { Table, flexRender, type ColumnDef } from '@tanstack/react-table';
 import { HiOutlineMagnifyingGlass, HiOutlineCog } from 'react-icons/hi2';
 import type { MediaInfo, ProcessResult } from '../types';
 import { Header } from './Header';
@@ -48,7 +48,7 @@ interface MainLayoutProps {
   mediaList: MediaInfo[];
   processResult: ProcessResult | null;
   table: Table<MediaInfo>;
-  columns: any[];
+  columns: ColumnDef<MediaInfo>[];
 
   // Lightbox
   lightboxIndex: number | null;

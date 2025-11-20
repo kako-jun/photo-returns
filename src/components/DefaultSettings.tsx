@@ -1,4 +1,5 @@
 import { HiPhoto, HiFilm, HiChevronDown } from 'react-icons/hi2';
+import type { MediaInfo } from '../types';
 
 interface DefaultSettingsProps {
   // Photo settings
@@ -52,7 +53,9 @@ export function DefaultSettings({
               <div className="relative flex-1">
                 <select
                   value={defaultPhotoDateSource}
-                  onChange={(e) => onPhotoDateSourceChange(e.target.value as any)}
+                  onChange={(e) =>
+                    onPhotoDateSourceChange(e.target.value as MediaInfo['date_source'])
+                  }
                   className="w-full cursor-pointer appearance-none rounded border border-gray-300 bg-white px-2 py-1 pr-6 text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                 >
                   <option
@@ -133,7 +136,9 @@ export function DefaultSettings({
               <div className="relative flex-1">
                 <select
                   value={defaultPhotoRotationMode}
-                  onChange={(e) => onPhotoRotationModeChange(e.target.value as any)}
+                  onChange={(e) =>
+                    onPhotoRotationModeChange(e.target.value as MediaInfo['rotation_mode'])
+                  }
                   className="w-full cursor-pointer appearance-none rounded border border-gray-300 bg-white px-2 py-1 pr-6 text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                 >
                   <option value="none">None</option>
@@ -162,7 +167,9 @@ export function DefaultSettings({
               <div className="relative flex-1">
                 <select
                   value={defaultVideoDateSource}
-                  onChange={(e) => onVideoDateSourceChange(e.target.value as any)}
+                  onChange={(e) =>
+                    onVideoDateSourceChange(e.target.value as MediaInfo['date_source'])
+                  }
                   className="w-full cursor-pointer appearance-none rounded border border-gray-300 bg-white px-2 py-1 pr-6 text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                 >
                   <option
@@ -236,7 +243,9 @@ export function DefaultSettings({
               <div className="relative flex-1">
                 <select
                   value={defaultVideoRotationMode}
-                  onChange={(e) => onVideoRotationModeChange(e.target.value as any)}
+                  onChange={(e) =>
+                    onVideoRotationModeChange(e.target.value as MediaInfo['rotation_mode'])
+                  }
                   className="w-full cursor-pointer appearance-none rounded border border-gray-300 bg-white px-2 py-1 pr-6 text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                 >
                   <option value="none">None</option>

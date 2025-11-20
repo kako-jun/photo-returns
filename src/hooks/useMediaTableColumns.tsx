@@ -219,7 +219,11 @@ export function useMediaTableColumns({
               setMediaList((prevList) =>
                 prevList.map((item, idx) =>
                   idx === info.row.index
-                    ? { ...item, date_source: newSource as any, date_taken: selectedOption.date }
+                    ? {
+                        ...item,
+                        date_source: newSource as MediaInfo['date_source'],
+                        date_taken: selectedOption.date,
+                      }
                     : item
                 )
               );
@@ -445,7 +449,9 @@ export function useMediaTableColumns({
           const handleRotationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
             setMediaList((prevList) =>
               prevList.map((item, idx) =>
-                idx === info.row.index ? { ...item, rotation_mode: e.target.value as any } : item
+                idx === info.row.index
+                  ? { ...item, rotation_mode: e.target.value as MediaInfo['rotation_mode'] }
+                  : item
               )
             );
           };
