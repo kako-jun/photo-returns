@@ -63,10 +63,10 @@ fn reveal_in_filemanager(path: String) -> Result<(), String> {
         if parent.exists() {
             parent
         } else {
-            return Err(format!("Path does not exist: {}", path));
+            return Err(format!("Path does not exist: {path}"));
         }
     } else {
-        return Err(format!("Invalid path: {}", path));
+        return Err(format!("Invalid path: {path}"));
     };
 
     #[cfg(target_os = "windows")]
@@ -112,13 +112,13 @@ fn reveal_in_filemanager(path: String) -> Result<(), String> {
                 Command::new("xdg-open")
                     .arg(parent)
                     .spawn()
-                    .map_err(|e| format!("Failed to open file manager: {}", e))?;
+                    .map_err(|e| format!("Failed to open file manager: {e}"))?;
             }
         } else {
             Command::new("xdg-open")
                 .arg(target_path)
                 .spawn()
-                .map_err(|e| format!("Failed to open file manager: {}", e))?;
+                .map_err(|e| format!("Failed to open file manager: {e}"))?;
         }
     }
 
@@ -128,7 +128,7 @@ fn reveal_in_filemanager(path: String) -> Result<(), String> {
 /// テスト用のgreetコマンド
 #[tauri::command]
 fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
+    format!("Hello, {name}! You've been greeted from Rust!")
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -136,7 +136,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![greet, scan_media, process_media, reveal_in_filemanager])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            scan_media,
+            process_media,
+            reveal_in_filemanager
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

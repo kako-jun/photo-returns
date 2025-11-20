@@ -1,7 +1,7 @@
+use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 use std::fs::File;
 use std::path::Path;
-use anyhow::{Result, Context};
-use chrono::{DateTime, Utc};
 
 /// 動画ファイルからメタデータを抽出
 pub fn extract_video_metadata(path: &Path) -> Result<VideoMetadata> {
@@ -9,8 +9,7 @@ pub fn extract_video_metadata(path: &Path) -> Result<VideoMetadata> {
     let size = file.metadata()?.len();
     let reader = std::io::BufReader::new(file);
 
-    let mp4 = mp4::Mp4Reader::read_header(reader, size)
-        .context("Failed to parse MP4 file")?;
+    let mp4 = mp4::Mp4Reader::read_header(reader, size).context("Failed to parse MP4 file")?;
 
     // QuickTimeメタデータから作成日時を取得
     let creation_time = mp4.moov.mvhd.creation_time;

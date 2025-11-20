@@ -34,7 +34,7 @@ impl Default for BurstDetectorConfig {
     fn default() -> Self {
         Self {
             max_interval_seconds: 3, // 3秒以内
-            min_count: 3,             // 3枚以上
+            min_count: 3,            // 3枚以上
         }
     }
 }
@@ -146,14 +146,14 @@ mod tests {
         let base_time = Utc::now().with_timezone(&Local);
 
         let dates = vec![
-            Some(base_time),                                      // 0
-            Some(base_time + Duration::seconds(1)),               // 1 - グループ1
-            Some(base_time + Duration::seconds(2)),               // 2 - グループ1
-            Some(base_time + Duration::seconds(3)),               // 3 - グループ1
-            Some(base_time + Duration::seconds(10)),              // 4 - 間隔が空く
-            Some(base_time + Duration::seconds(11)),              // 5
-            Some(base_time + Duration::seconds(12)),              // 6 - グループ2
-            Some(base_time + Duration::seconds(13)),              // 7 - グループ2
+            Some(base_time),                         // 0
+            Some(base_time + Duration::seconds(1)),  // 1 - グループ1
+            Some(base_time + Duration::seconds(2)),  // 2 - グループ1
+            Some(base_time + Duration::seconds(3)),  // 3 - グループ1
+            Some(base_time + Duration::seconds(10)), // 4 - 間隔が空く
+            Some(base_time + Duration::seconds(11)), // 5
+            Some(base_time + Duration::seconds(12)), // 6 - グループ2
+            Some(base_time + Duration::seconds(13)), // 7 - グループ2
         ];
 
         let config = BurstDetectorConfig::default();

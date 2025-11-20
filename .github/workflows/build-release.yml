@@ -50,6 +50,18 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Run frontend linting
+        run: npm run lint
+
+      - name: Run frontend format check
+        run: npm run format:check
+
+      - name: Run Rust format check
+        run: npm run format:rust:check
+
+      - name: Run Rust linting
+        run: npm run lint:rust || true
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:

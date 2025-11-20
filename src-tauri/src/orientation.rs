@@ -134,11 +134,9 @@ pub fn reset_exif_orientation(image_path: &Path) -> Result<()> {
     }
 
     // JPEGファイルを読み込み
-    let jpeg_bytes = fs::read(image_path)
-        .context("Failed to read JPEG file for EXIF reset")?;
+    let jpeg_bytes = fs::read(image_path).context("Failed to read JPEG file for EXIF reset")?;
 
-    let mut jpeg = Jpeg::from_bytes(jpeg_bytes.into())
-        .context("Failed to parse JPEG structure")?;
+    let mut jpeg = Jpeg::from_bytes(jpeg_bytes.into()).context("Failed to parse JPEG structure")?;
 
     // EXIFセグメントを取得
     if let Some(exif_segment) = jpeg.exif() {
@@ -180,7 +178,7 @@ pub fn reset_exif_orientation(image_path: &Path) -> Result<()> {
         // TIFFデータ内でOrientationタグを検索
         let mut found = false;
         for i in 0..tiff_data.len().saturating_sub(12) {
-            if &tiff_data[i..i+2] == &orientation_bytes {
+            if tiff_data[i..i + 2] == orientation_bytes {
                 // Orientationタグ発見
                 // 値フィールドの位置は タグ(2) + 型(2) + カウント(4) = 8バイト後
                 let value_offset = 6 + i + 8;
@@ -216,6 +214,7 @@ pub fn reset_exif_orientation(image_path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::GenericImageView;
 
     #[test]
     fn test_orientation_from_u32() {

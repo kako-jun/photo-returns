@@ -291,6 +291,29 @@ cd src-tauri && cargo check  # Rust コードチェック
 cd src-tauri && cargo test   # Rust テスト実行
 ```
 
+### Lint & Format コマンド
+
+**フロントエンド:**
+```bash
+npm run lint           # ESLint チェック
+npm run lint:fix       # ESLint 自動修正
+npm run format         # Prettier 自動フォーマット
+npm run format:check   # Prettier チェック
+```
+
+**バックエンド:**
+```bash
+npm run lint:rust      # clippy チェック
+npm run format:rust    # rustfmt 自動フォーマット
+npm run format:rust:check  # rustfmt チェック
+```
+
+**Pre-commit フック:**
+- **Husky + lint-staged** によりコミット時に自動実行
+- TypeScript/React: ESLint + Prettier
+- Rust: rustfmt + clippy
+- 詳細は `LINT_SETUP.md` を参照
+
 ### ビルド & リリース
 
 プロジェクトには自動ビルド&リリース用のGitHub Actionsワークフローが含まれています。
@@ -392,6 +415,12 @@ Android/iOS ビルド時：
 - `tailwindcss` + `@tailwindcss/postcss` - スタイリング
 - `react-icons` - アイコン（HeroIcons 2）
 
+### 開発ツール依存関係
+- `eslint` + `@typescript-eslint/*` - TypeScript linter
+- `prettier` + `prettier-plugin-tailwindcss` - コードフォーマッター
+- `husky` - Git hooks 管理
+- `lint-staged` - ステージングファイルのlint実行
+
 ## 学んだベストプラクティス
 
 1. **chrono に必ず serde feature を追加** - DateTime のシリアライズに必要
@@ -402,6 +431,9 @@ Android/iOS ビルド時：
 6. **Arc<Mutex<>> を慎重に使用** - 並列処理の適切な unwrap パターン
 7. **コンポーネント分割** - App.tsxはロジックのみ、MainLayoutはプレゼンテーションのみ
 8. **img-partsのImageEXIFトレイト** - use文でトレイトをインポート必須
+9. **ESLint 9.x は Flat Config 形式** - eslint.config.js を使用、.eslintrc.json は非推奨
+10. **Husky + lint-staged で自動整形** - コミット時に自動的にlintとフォーマットを実行
+11. **clippy の警告を適切に管理** - `-D warnings` は既知の警告がある場合に問題になる
 
 ## コミット履歴のハイライト
 
@@ -418,6 +450,7 @@ Android/iOS ビルド時：
 - `767af04` - ログ機能実装（LogViewer + 詳細ログ）
 - `b901f36` - EXIF回転補正機能（Before/After + EXIF書き換え）
 - `7f967de` - エラーハンドリング + Processing Summary + Retry機能
+- (未コミット) - Lint & Format セットアップ（ESLint + Prettier + Husky + clippy）
 
 ## 参考資料
 

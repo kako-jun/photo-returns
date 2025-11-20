@@ -3,7 +3,6 @@
 use anyhow::Result;
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use exif::{In, Reader, Tag};
-use image;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -164,7 +163,7 @@ fn is_video_file(extension: &str) -> bool {
 #[derive(Debug, Clone)]
 struct ExifInfo {
     date: Option<DateTime<Local>>,
-    subsec: Option<u32>, // ミリ秒（0-999）
+    subsec: Option<u32>,      // ミリ秒（0-999）
     timezone: Option<String>, // タイムゾーンオフセット（例："+09:00"）
     orientation: Option<u32>,
     width: Option<u32>,
@@ -179,14 +178,16 @@ fn get_exif_info(path: &Path) -> Result<ExifInfo> {
     let exifreader = Reader::new();
     let exif = match exifreader.read_from_container(&mut bufreader) {
         Ok(exif) => exif,
-        Err(_) => return Ok(ExifInfo {
-            date: None,
-            subsec: None,
-            timezone: None,
-            orientation: None,
-            width: None,
-            height: None,
-        }),
+        Err(_) => {
+            return Ok(ExifInfo {
+                date: None,
+                subsec: None,
+                timezone: None,
+                orientation: None,
+                width: None,
+                height: None,
+            })
+        }
     };
 
     let mut info = ExifInfo {
@@ -203,7 +204,8 @@ fn get_exif_info(path: &Path) -> Result<ExifInfo> {
         if let exif::Value::Ascii(ref vec) = field.value {
             if let Some(datetime) = vec.first() {
                 let datetime_str = String::from_utf8_lossy(datetime);
-                if let Ok(naive) = NaiveDateTime::parse_from_str(&datetime_str, "%Y:%m:%d %H:%M:%S") {
+                if let Ok(naive) = NaiveDateTime::parse_from_str(&datetime_str, "%Y:%m:%d %H:%M:%S")
+                {
                     info.date = Some(DateTime::from_naive_utc_and_offset(
                         naive,
                         *Local::now().offset(),
@@ -219,7 +221,9 @@ fn get_exif_info(path: &Path) -> Result<ExifInfo> {
             if let exif::Value::Ascii(ref vec) = field.value {
                 if let Some(datetime) = vec.first() {
                     let datetime_str = String::from_utf8_lossy(datetime);
-                    if let Ok(naive) = NaiveDateTime::parse_from_str(&datetime_str, "%Y:%m:%d %H:%M:%S") {
+                    if let Ok(naive) =
+                        NaiveDateTime::parse_from_str(&datetime_str, "%Y:%m:%d %H:%M:%S")
+                    {
                         info.date = Some(DateTime::from_naive_utc_and_offset(
                             naive,
                             *Local::now().offset(),
@@ -359,10 +363,13 @@ fn extract_date_from_filename(filename: &str) -> Option<DateTime<Local>> {
         let month: u32 = caps.get(2)?.as_str().parse().ok()?;
         let day: u32 = caps.get(3)?.as_str().parse().ok()?;
 
-        if let Some(naive) = chrono::NaiveDate::from_ymd_opt(year, month, day)
-            .and_then(|d| d.and_hms_opt(0, 0, 0))
+        if let Some(naive) =
+            chrono::NaiveDate::from_ymd_opt(year, month, day).and_then(|d| d.and_hms_opt(0, 0, 0))
         {
-            return Some(DateTime::from_naive_utc_and_offset(naive, *Local::now().offset()));
+            return Some(DateTime::from_naive_utc_and_offset(
+                naive,
+                *Local::now().offset(),
+            ));
         }
     }
 
@@ -387,7 +394,12 @@ fn get_file_modified_date(path: &Path) -> Result<DateTime<Local>> {
 fn format_filename(date: &DateTime<Local>, subsec: Option<u32>, extension: &str) -> String {
     if let Some(ms) = subsec {
         // ミリ秒がある場合は3桁で追加
-        format!("{}-{:03}.{}", date.format("%Y-%m-%d_%H-%M-%S"), ms, extension)
+        format!(
+            "{}-{:03}.{}",
+            date.format("%Y-%m-%d_%H-%M-%S"),
+            ms,
+            extension
+        )
     } else {
         // ミリ秒がない場合は秒まで
         format!("{}.{}", date.format("%Y-%m-%d_%H-%M-%S"), extension)
@@ -450,14 +462,13 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
             };
 
             // ファイル名を取得
-            let filename = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
             // 各候補の日付を取得
             let exif_date = exif_info.date;
-            let video_date = video_meta.as_ref().map(|v| DateTime::<Local>::from(v.creation_time));
+            let video_date = video_meta
+                .as_ref()
+                .map(|v| DateTime::<Local>::from(v.creation_time));
             let filename_date = extract_date_from_filename(filename);
             let file_created_date = get_file_created_date(path).ok();
             let file_modified_date = get_file_modified_date(path).ok();
@@ -484,11 +495,7 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
 
                 let info = MediaInfo {
                     original_path: path.to_path_buf(),
-                    file_name: path
-                        .file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string(),
+                    file_name: path.file_name().unwrap().to_string_lossy().to_string(),
                     media_type: mtype,
                     date_taken: Some(date),
                     subsec_time: subsec,
@@ -510,8 +517,8 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
                     date_source,
                     exif_orientation: exif_info.orientation,
                     rotation_applied: false, // スキャン時はまだ回転していない
-                    timezone_offset: None, // ユーザー未選択（フロントエンドで設定）
-                    rotation_mode: None, // ユーザー未選択（フロントエンドで設定）
+                    timezone_offset: None,   // ユーザー未選択（フロントエンドで設定）
+                    rotation_mode: None,     // ユーザー未選択（フロントエンドで設定）
                     width: video_meta.as_ref().map(|v| v.width).or(exif_info.width),
                     height: video_meta.as_ref().map(|v| v.height).or(exif_info.height),
                     logs: Vec::new(), // ログは空で初期化
@@ -546,7 +553,8 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
 
                 // ファイル名に連番を追加
                 if let Some(date) = media_info.date_taken {
-                    let extension = media_info.original_path
+                    let extension = media_info
+                        .original_path
                         .extension()
                         .and_then(|e| e.to_str())
                         .unwrap_or("jpg");
@@ -597,7 +605,11 @@ fn create_backup(original_path: &Path, backup_dir: &Path) -> Result<()> {
 }
 
 /// メディアファイルをリネームして階層構造にコピー
-pub fn process_media(input_dir: &Path, output_dir: &Path, options: &ProcessOptions) -> Result<ProcessResult> {
+pub fn process_media(
+    input_dir: &Path,
+    output_dir: &Path,
+    options: &ProcessOptions,
+) -> Result<ProcessResult> {
     let mut media = scan_media(input_dir, options)?;
     let total_files = media.len();
 
@@ -606,7 +618,10 @@ pub fn process_media(input_dir: &Path, output_dir: &Path, options: &ProcessOptio
 
     let processor = |item: &mut MediaInfo| {
         if let Some(date) = item.date_taken {
-            item.add_log(LogLevel::Info, format!("Processing started: {}", item.file_name));
+            item.add_log(
+                LogLevel::Info,
+                format!("Processing started: {}", item.file_name),
+            );
 
             // バックアップ作成
             if let Some(ref backup_dir) = options.backup_dir {
@@ -623,11 +638,18 @@ pub fn process_media(input_dir: &Path, output_dir: &Path, options: &ProcessOptio
             // 出力ディレクトリ作成
             let target_dir = match create_date_hierarchy(output_dir, &date) {
                 Ok(dir) => {
-                    item.add_log(LogLevel::Info, format!("Created directory: {}", dir.display()));
+                    item.add_log(
+                        LogLevel::Info,
+                        format!("Created directory: {}", dir.display()),
+                    );
                     dir
-                },
+                }
                 Err(e) => {
-                    let msg = format!("Failed to create directory for {}: {}", item.original_path.display(), e);
+                    let msg = format!(
+                        "Failed to create directory for {}: {}",
+                        item.original_path.display(),
+                        e
+                    );
                     item.add_log(LogLevel::Error, &msg);
                     errors.lock().unwrap().push(msg);
                     return;
@@ -652,20 +674,29 @@ pub fn process_media(input_dir: &Path, output_dir: &Path, options: &ProcessOptio
                     date.format("%Y-%m-%d_%H-%M-%S").to_string()
                 };
 
-                let new_name = format!("{}_{:02}.{}", base_name, counter, extension);
+                let new_name = format!("{base_name}_{counter:02}.{extension}");
                 target_path = target_dir.join(&new_name);
                 counter += 1;
             }
 
             if counter > 1 {
-                item.add_log(LogLevel::Warning, format!("File name conflict detected, using counter: {}", counter - 1));
+                item.add_log(
+                    LogLevel::Warning,
+                    format!(
+                        "File name conflict detected, using counter: {}",
+                        counter - 1
+                    ),
+                );
             }
 
             // ファイルをコピー
             match fs::copy(&item.original_path, &target_path) {
                 Ok(_) => {
                     item.new_path = target_path.clone();
-                    item.add_log(LogLevel::Info, format!("File copied successfully to: {}", target_path.display()));
+                    item.add_log(
+                        LogLevel::Info,
+                        format!("File copied successfully to: {}", target_path.display()),
+                    );
 
                     // 画像回転処理（rotation_modeに基づく）
                     if item.media_type == MediaType::Photo {
@@ -695,7 +726,10 @@ pub fn process_media(input_dir: &Path, output_dir: &Path, options: &ProcessOptio
                             };
 
                             if degrees != 0 {
-                                item.add_log(LogLevel::Info, format!("Applying rotation: {}°", degrees));
+                                item.add_log(
+                                    LogLevel::Info,
+                                    format!("Applying rotation: {degrees}°"),
+                                );
 
                                 // 画像を開く
                                 match image::open(&target_path) {
@@ -711,23 +745,42 @@ pub fn process_media(input_dir: &Path, output_dir: &Path, options: &ProcessOptio
                                         // 上書き保存
                                         match rotated.save(&target_path) {
                                             Ok(_) => {
-                                                item.add_log(LogLevel::Info, "Image rotated and saved successfully");
+                                                item.add_log(
+                                                    LogLevel::Info,
+                                                    "Image rotated and saved successfully",
+                                                );
                                                 item.rotation_applied = true;
 
                                                 // EXIF Orientationを1にリセット
-                                                if let Err(e) = orientation::reset_exif_orientation(&target_path) {
-                                                    item.add_log(LogLevel::Warning, format!("Failed to reset EXIF orientation: {}", e));
+                                                if let Err(e) = orientation::reset_exif_orientation(
+                                                    &target_path,
+                                                ) {
+                                                    item.add_log(
+                                                        LogLevel::Warning,
+                                                        format!(
+                                                            "Failed to reset EXIF orientation: {e}"
+                                                        ),
+                                                    );
                                                 } else {
-                                                    item.add_log(LogLevel::Info, "EXIF orientation reset to Normal (1)");
+                                                    item.add_log(
+                                                        LogLevel::Info,
+                                                        "EXIF orientation reset to Normal (1)",
+                                                    );
                                                 }
                                             }
                                             Err(e) => {
-                                                item.add_log(LogLevel::Error, format!("Failed to save rotated image: {}", e));
+                                                item.add_log(
+                                                    LogLevel::Error,
+                                                    format!("Failed to save rotated image: {e}"),
+                                                );
                                             }
                                         }
                                     }
                                     Err(e) => {
-                                        item.add_log(LogLevel::Error, format!("Failed to open image for rotation: {}", e));
+                                        item.add_log(
+                                            LogLevel::Error,
+                                            format!("Failed to open image for rotation: {e}"),
+                                        );
                                     }
                                 }
                             }
