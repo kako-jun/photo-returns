@@ -1,5 +1,4 @@
 import { HiPhoto, HiFilm, HiChevronDown } from 'react-icons/hi2';
-import type { MediaInfo } from '../types';
 
 interface DefaultSettingsProps {
   // Photo settings
@@ -54,7 +53,9 @@ export function DefaultSettings({
                 <select
                   value={defaultPhotoDateSource}
                   onChange={(e) =>
-                    onPhotoDateSourceChange(e.target.value as MediaInfo['date_source'])
+                    onPhotoDateSourceChange(
+                      e.target.value as 'Exif' | 'FileName' | 'FileCreated' | 'FileModified'
+                    )
                   }
                   className="w-full cursor-pointer appearance-none rounded border border-gray-300 bg-white px-2 py-1 pr-6 text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                 >
@@ -137,7 +138,9 @@ export function DefaultSettings({
                 <select
                   value={defaultPhotoRotationMode}
                   onChange={(e) =>
-                    onPhotoRotationModeChange(e.target.value as MediaInfo['rotation_mode'])
+                    onPhotoRotationModeChange(
+                      e.target.value as 'none' | 'exif' | '90' | '180' | '270'
+                    )
                   }
                   className="w-full cursor-pointer appearance-none rounded border border-gray-300 bg-white px-2 py-1 pr-6 text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                 >
@@ -168,7 +171,9 @@ export function DefaultSettings({
                 <select
                   value={defaultVideoDateSource}
                   onChange={(e) =>
-                    onVideoDateSourceChange(e.target.value as MediaInfo['date_source'])
+                    onVideoDateSourceChange(
+                      e.target.value as 'Exif' | 'FileName' | 'FileCreated' | 'FileModified'
+                    )
                   }
                   className="w-full cursor-pointer appearance-none rounded border border-gray-300 bg-white px-2 py-1 pr-6 text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                 >
@@ -244,7 +249,9 @@ export function DefaultSettings({
                 <select
                   value={defaultVideoRotationMode}
                   onChange={(e) =>
-                    onVideoRotationModeChange(e.target.value as MediaInfo['rotation_mode'])
+                    onVideoRotationModeChange(
+                      e.target.value as 'none' | 'exif' | '90' | '180' | '270'
+                    )
                   }
                   className="w-full cursor-pointer appearance-none rounded border border-gray-300 bg-white px-2 py-1 pr-6 text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                 >

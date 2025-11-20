@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { createColumnHelper } from '@tanstack/react-table';
+import { createColumnHelper, type ColumnDef } from '@tanstack/react-table';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import {
   HiOutlineCamera,
@@ -43,7 +43,7 @@ export function useMediaTableColumns({
   setMediaList,
   isMockMode,
 }: UseMediaTableColumnsProps) {
-  return useMemo(
+  return useMemo<ColumnDef<MediaInfo, any>[]>(
     () => [
       columnHelper.display({
         id: 'expander',
@@ -244,7 +244,7 @@ export function useMediaTableColumns({
               <select
                 value={currentSource}
                 onChange={handleSourceChange}
-                className={`cursor-pointer appearance-none rounded border border-gray-300 px-2 py-1 pr-6 text-xs font-semibold dark:border-gray-600 ${sourceColors[currentSource]}`}
+                className={`cursor-pointer appearance-none rounded border border-gray-300 px-2 py-1 pr-6 text-xs font-semibold dark:border-gray-600 ${sourceColors[currentSource as keyof typeof sourceColors]}`}
               >
                 {availableSources.map((option) => (
                   <option
@@ -698,9 +698,9 @@ export function useMediaTableColumns({
           };
           return (
             <span
-              className={`inline-block rounded px-2 py-1 text-xs font-semibold uppercase ${statusColors[status]}`}
+              className={`inline-block rounded px-2 py-1 text-xs font-semibold uppercase ${statusColors[status as keyof typeof statusColors]}`}
             >
-              {displayText[status]}
+              {displayText[status as keyof typeof displayText]}
             </span>
           );
         },
