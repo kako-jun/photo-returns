@@ -1,6 +1,6 @@
-import { HiXMark, HiChevronLeft, HiChevronRight, HiPhoto } from "react-icons/hi2";
-import { convertFileSrc } from "@tauri-apps/api/core";
-import type { MediaInfo } from "../types";
+import { HiXMark, HiChevronLeft, HiChevronRight, HiPhoto } from 'react-icons/hi2';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import type { MediaInfo } from '../types';
 
 interface LightBoxProps {
   mediaList: MediaInfo[];
@@ -30,10 +30,10 @@ export function LightBox({
     >
       <button
         onClick={onClose}
-        className="absolute top-4 right-4 text-white hover:text-gray-300 p-2 rounded-full bg-black bg-opacity-50 hover:bg-opacity-70 transition-all"
+        className="bg-opacity-50 hover:bg-opacity-70 absolute top-4 right-4 rounded-full bg-black p-2 text-white transition-all hover:text-gray-300"
         title="Close (ESC)"
       >
-        <HiXMark className="w-8 h-8" />
+        <HiXMark className="h-8 w-8" />
       </button>
 
       {currentIndex > 0 && (
@@ -42,10 +42,10 @@ export function LightBox({
             e.stopPropagation();
             onPrevious();
           }}
-          className="absolute left-4 text-white hover:text-gray-300 p-2 rounded-full bg-black bg-opacity-50 hover:bg-opacity-70 transition-all"
+          className="bg-opacity-50 hover:bg-opacity-70 absolute left-4 rounded-full bg-black p-2 text-white transition-all hover:text-gray-300"
           title="Previous (←)"
         >
-          <HiChevronLeft className="w-8 h-8" />
+          <HiChevronLeft className="h-8 w-8" />
         </button>
       )}
 
@@ -55,34 +55,36 @@ export function LightBox({
             e.stopPropagation();
             onNext();
           }}
-          className="absolute right-4 text-white hover:text-gray-300 p-2 rounded-full bg-black bg-opacity-50 hover:bg-opacity-70 transition-all"
+          className="bg-opacity-50 hover:bg-opacity-70 absolute right-4 rounded-full bg-black p-2 text-white transition-all hover:text-gray-300"
           title="Next (→)"
         >
-          <HiChevronRight className="w-8 h-8" />
+          <HiChevronRight className="h-8 w-8" />
         </button>
       )}
 
       <div
-        className="max-w-[90vw] max-h-[90vh] flex flex-col items-center"
+        className="flex max-h-[90vh] max-w-[90vw] flex-col items-center"
         onClick={(e) => e.stopPropagation()}
       >
         {isMockMode ? (
           // モックモード：画像の代わりに情報を表示
-          <div className="bg-gray-800 rounded-lg p-8 shadow-2xl">
-            <HiPhoto className="w-32 h-32 text-gray-400 mx-auto mb-4" />
-            <div className="text-white space-y-2">
-              <p className="font-semibold text-xl">{currentMedia.file_name}</p>
+          <div className="rounded-lg bg-gray-800 p-8 shadow-2xl">
+            <HiPhoto className="mx-auto mb-4 h-32 w-32 text-gray-400" />
+            <div className="space-y-2 text-white">
+              <p className="text-xl font-semibold">{currentMedia.file_name}</p>
               <p className="text-gray-300">Type: {currentMedia.media_type}</p>
-              <p className="text-gray-300">Size: {(currentMedia.file_size / (1024 * 1024)).toFixed(2)} MB</p>
+              <p className="text-gray-300">
+                Size: {(currentMedia.file_size / (1024 * 1024)).toFixed(2)} MB
+              </p>
               {currentMedia.width && currentMedia.height && (
                 <p className="text-gray-300">
                   Resolution: {currentMedia.width} × {currentMedia.height}
                 </p>
               )}
-              <p className="text-sm text-gray-400 mt-4">
+              <p className="mt-4 text-sm text-gray-400">
                 {currentIndex + 1} / {mediaList.length}
               </p>
-              <p className="text-xs text-yellow-400 mt-2">
+              <p className="mt-2 text-xs text-yellow-400">
                 🎨 Mock Mode: Image preview not available
               </p>
             </div>
@@ -93,9 +95,9 @@ export function LightBox({
             <img
               src={convertFileSrc(currentMedia.original_path)}
               alt={currentMedia.file_name}
-              className="max-w-full max-h-[80vh] object-contain rounded shadow-2xl"
+              className="max-h-[80vh] max-w-full rounded object-contain shadow-2xl"
             />
-            <div className="mt-4 text-center text-white bg-black bg-opacity-70 px-4 py-2 rounded">
+            <div className="bg-opacity-70 mt-4 rounded bg-black px-4 py-2 text-center text-white">
               <p className="font-semibold">{currentMedia.file_name}</p>
               <p className="text-sm text-gray-300">
                 {currentIndex + 1} / {mediaList.length}

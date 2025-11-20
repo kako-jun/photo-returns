@@ -1,30 +1,30 @@
-import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
 import {
   useReactTable,
   getCoreRowModel,
   getExpandedRowModel,
   ExpandedState,
-} from "@tanstack/react-table";
-import "./App.css";
-import { MOCK_ENABLED, mockMediaList, mockProcessResult } from "./mock-data";
-import type { MediaInfo, ProcessResult } from "./types";
-import { MainLayout } from "./components/MainLayout";
-import { useMediaTableColumns } from "./hooks/useMediaTableColumns";
+} from '@tanstack/react-table';
+import './App.css';
+import { MOCK_ENABLED, mockMediaList, mockProcessResult } from './mock-data';
+import type { MediaInfo, ProcessResult } from './types';
+import { MainLayout } from './components/MainLayout';
+import { useMediaTableColumns } from './hooks/useMediaTableColumns';
 
 function App() {
   const [isDark, setIsDark] = useState(() => {
     // ローカルストレージから読み込む（デフォルトはライトモード）
-    return localStorage.getItem("theme") === "dark";
+    return localStorage.getItem('theme') === 'dark';
   });
   const [inputDir, setInputDir] = useState<string>(() => {
-    if (MOCK_ENABLED) return "C:\\Photos";
-    return localStorage.getItem("inputDir") || "";
+    if (MOCK_ENABLED) return 'C:\\Photos';
+    return localStorage.getItem('inputDir') || '';
   });
   const [outputDir, setOutputDir] = useState<string>(() => {
-    if (MOCK_ENABLED) return "C:\\Output";
-    return localStorage.getItem("outputDir") || "";
+    if (MOCK_ENABLED) return 'C:\\Output';
+    return localStorage.getItem('outputDir') || '';
   });
   const [mediaList, setMediaList] = useState<MediaInfo[]>(MOCK_ENABLED ? mockMediaList : []);
   const [isScanning, setIsScanning] = useState(false);
@@ -37,12 +37,20 @@ function App() {
   const [showScrollToTop, setShowScrollToTop] = useState(false);
 
   // 全体のデフォルト設定（静止画と動画で別）
-  const [defaultPhotoDateSource, setDefaultPhotoDateSource] = useState<"Exif" | "FileName" | "FileCreated" | "FileModified">("Exif");
-  const [defaultPhotoTimezoneOffset, setDefaultPhotoTimezoneOffset] = useState<string>("exif");
-  const [defaultPhotoRotationMode, setDefaultPhotoRotationMode] = useState<"none" | "exif" | "90" | "180" | "270">("exif");
-  const [defaultVideoDateSource, setDefaultVideoDateSource] = useState<"Exif" | "FileName" | "FileCreated" | "FileModified">("FileModified");
-  const [defaultVideoTimezoneOffset, setDefaultVideoTimezoneOffset] = useState<string>("none");
-  const [defaultVideoRotationMode, setDefaultVideoRotationMode] = useState<"none" | "exif" | "90" | "180" | "270">("none");
+  const [defaultPhotoDateSource, setDefaultPhotoDateSource] = useState<
+    'Exif' | 'FileName' | 'FileCreated' | 'FileModified'
+  >('Exif');
+  const [defaultPhotoTimezoneOffset, setDefaultPhotoTimezoneOffset] = useState<string>('exif');
+  const [defaultPhotoRotationMode, setDefaultPhotoRotationMode] = useState<
+    'none' | 'exif' | '90' | '180' | '270'
+  >('exif');
+  const [defaultVideoDateSource, setDefaultVideoDateSource] = useState<
+    'Exif' | 'FileName' | 'FileCreated' | 'FileModified'
+  >('FileModified');
+  const [defaultVideoTimezoneOffset, setDefaultVideoTimezoneOffset] = useState<string>('none');
+  const [defaultVideoRotationMode, setDefaultVideoRotationMode] = useState<
+    'none' | 'exif' | '90' | '180' | '270'
+  >('none');
 
   // ユーザーの確認が必要な行（error）を自動展開
   useEffect(() => {
@@ -50,7 +58,7 @@ function App() {
     mediaList.forEach((item, index) => {
       // error: 処理失敗 → 確認が必要
       // pending: 処理待ち、processing: 処理中、completed: 完了、no_change: 変更なし → 展開不要
-      if (item.status === "error") {
+      if (item.status === 'error') {
         newExpanded[index] = true;
       }
     });
@@ -60,11 +68,11 @@ function App() {
   // ダークモード切り替え
   useEffect(() => {
     if (isDark) {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("theme", "dark");
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
     } else {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("theme", "light");
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
     }
   }, [isDark]);
 
@@ -73,16 +81,16 @@ function App() {
     if (lightboxIndex === null) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === 'Escape') {
         e.preventDefault();
         setLightboxIndex(null);
-      } else if (e.key === "ArrowLeft") {
+      } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
         setLightboxIndex((prev) => {
           if (prev === null || prev === 0) return prev;
           return prev - 1;
         });
-      } else if (e.key === "ArrowRight") {
+      } else if (e.key === 'ArrowRight') {
         e.preventDefault();
         setLightboxIndex((prev) => {
           if (prev === null || prev === mediaList.length - 1) return prev;
@@ -91,8 +99,8 @@ function App() {
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [lightboxIndex, mediaList.length]);
 
   // スクロール位置の監視（トップに戻るボタン表示制御）
@@ -101,8 +109,8 @@ function App() {
       setShowScrollToTop(window.scrollY > 300);
     };
 
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   const toggleDarkMode = () => {
@@ -110,7 +118,7 @@ function App() {
   };
 
   const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // フォルダ選択
@@ -118,12 +126,12 @@ function App() {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Select Input Directory",
+      title: 'Select Input Directory',
     });
     if (selected) {
       const path = selected as string;
       setInputDir(path);
-      localStorage.setItem("inputDir", path);
+      localStorage.setItem('inputDir', path);
     }
   };
 
@@ -131,25 +139,25 @@ function App() {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Select Output Directory",
+      title: 'Select Output Directory',
     });
     if (selected) {
       const path = selected as string;
       setOutputDir(path);
-      localStorage.setItem("outputDir", path);
+      localStorage.setItem('outputDir', path);
     }
   };
 
   // スキャン
   const scanMedia = async () => {
     if (!inputDir) {
-      alert("Please select input directory");
+      alert('Please select input directory');
       return;
     }
 
     setIsScanning(true);
     try {
-      const result = await invoke<MediaInfo[]>("scan_media", {
+      const result = await invoke<MediaInfo[]>('scan_media', {
         inputDir,
         includeVideos: true,
         parallel: true,
@@ -157,7 +165,7 @@ function App() {
 
       // 初期ステータスとデフォルト設定を適用（静止画と動画で分ける）
       const mediaWithStatus = result.map((item: MediaInfo) => {
-        const isPhoto = item.media_type === "Photo";
+        const isPhoto = item.media_type === 'Photo';
         const preferredDateSource = isPhoto ? defaultPhotoDateSource : defaultVideoDateSource;
 
         // デフォルトのDate Sourceが利用可能かチェック
@@ -166,11 +174,16 @@ function App() {
 
         const getDateForSource = (source: string) => {
           switch (source) {
-            case "Exif": return item.exif_date;
-            case "FileName": return item.filename_date;
-            case "FileCreated": return item.file_created_date;
-            case "FileModified": return item.file_modified_date;
-            default: return null;
+            case 'Exif':
+              return item.exif_date;
+            case 'FileName':
+              return item.filename_date;
+            case 'FileCreated':
+              return item.file_created_date;
+            case 'FileModified':
+              return item.file_modified_date;
+            default:
+              return null;
           }
         };
 
@@ -185,7 +198,7 @@ function App() {
           date_source: finalDateSource,
           date_taken: finalDateTaken,
           progress: 0,
-          status: "pending" as const,
+          status: 'pending' as const,
           timezone_offset: isPhoto ? defaultPhotoTimezoneOffset : defaultVideoTimezoneOffset,
           rotation_mode: isPhoto ? defaultPhotoRotationMode : defaultVideoRotationMode,
         };
@@ -193,7 +206,7 @@ function App() {
 
       setMediaList(mediaWithStatus);
     } catch (error) {
-      console.error("Scan error:", error);
+      console.error('Scan error:', error);
       alert(`Scan error: ${error}`);
     } finally {
       setIsScanning(false);
@@ -203,12 +216,12 @@ function App() {
   // 処理実行
   const processMedia = async () => {
     if (!inputDir || !outputDir) {
-      alert("Please select both input and output directories");
+      alert('Please select both input and output directories');
       return;
     }
 
     if (mediaList.length === 0) {
-      alert("No media files to process. Please scan first.");
+      alert('No media files to process. Please scan first.');
       return;
     }
 
@@ -219,9 +232,9 @@ function App() {
     // Check if output is inside input (dangerous)
     if (normalizedOutput.startsWith(normalizedInput + '/')) {
       alert(
-        "❌ Error: Output directory is inside input directory.\n\n" +
-        "This could cause infinite loops.\n" +
-        "Please select a different output location."
+        '❌ Error: Output directory is inside input directory.\n\n' +
+          'This could cause infinite loops.\n' +
+          'Please select a different output location.'
       );
       return;
     }
@@ -229,10 +242,10 @@ function App() {
     // Check if input equals output (overwrite mode)
     if (normalizedInput === normalizedOutput) {
       const proceed = window.confirm(
-        "⚠️ Warning: Input and output directories are the same.\n\n" +
-        "This will OVERWRITE existing files.\n" +
-        "Backup is strongly recommended.\n\n" +
-        "Do you want to continue?"
+        '⚠️ Warning: Input and output directories are the same.\n\n' +
+          'This will OVERWRITE existing files.\n' +
+          'Backup is strongly recommended.\n\n' +
+          'Do you want to continue?'
       );
       if (!proceed) {
         return;
@@ -243,7 +256,7 @@ function App() {
     setProcessResult(null);
 
     try {
-      const result = await invoke<ProcessResult>("process_media", {
+      const result = await invoke<ProcessResult>('process_media', {
         inputDir,
         outputDir,
         backupDir: null,
@@ -264,14 +277,14 @@ function App() {
         return {
           ...item,
           progress: 100,
-          status: processed?.new_path ? ("completed" as const) : ("error" as const),
-          new_path: processed?.new_path || "",
+          status: processed?.new_path ? ('completed' as const) : ('error' as const),
+          new_path: processed?.new_path || '',
         };
       });
 
       setMediaList(updatedMedia);
     } catch (error) {
-      console.error("Process error:", error);
+      console.error('Process error:', error);
       alert(`Process error: ${error}`);
     } finally {
       setIsProcessing(false);
@@ -280,16 +293,16 @@ function App() {
 
   // エラーファイルのみ再処理
   const retryFailedFiles = async () => {
-    const errorFiles = mediaList.filter(item => item.status === "error");
+    const errorFiles = mediaList.filter((item) => item.status === 'error');
 
     if (errorFiles.length === 0) {
-      alert("No failed files to retry");
+      alert('No failed files to retry');
       return;
     }
 
     const proceed = window.confirm(
       `Retry processing ${errorFiles.length} failed files?\n\n` +
-      "This will attempt to process only the files that failed previously."
+        'This will attempt to process only the files that failed previously.'
     );
 
     if (!proceed) {
@@ -297,11 +310,11 @@ function App() {
     }
 
     // エラーファイルのステータスをpendingにリセット
-    setMediaList(prev => prev.map(item =>
-      item.status === "error"
-        ? { ...item, status: "pending" as const, progress: 0 }
-        : item
-    ));
+    setMediaList((prev) =>
+      prev.map((item) =>
+        item.status === 'error' ? { ...item, status: 'pending' as const, progress: 0 } : item
+      )
+    );
 
     // 再処理実行
     await processMedia();

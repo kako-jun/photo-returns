@@ -1,4 +1,4 @@
-import type { ProcessResult, MediaInfo } from "../types";
+import type { ProcessResult, MediaInfo } from '../types';
 
 interface ProcessSummaryProps {
   processResult: ProcessResult;
@@ -8,50 +8,58 @@ interface ProcessSummaryProps {
 
 export function ProcessSummary({ mediaList, onRetryFailed }: ProcessSummaryProps) {
   // ステータス別にカウント
-  const completedCount = mediaList.filter(item => item.status === "completed").length;
-  const errorCount = mediaList.filter(item => item.status === "error").length;
-  const skippedCount = mediaList.filter(item => item.status === "no_change").length;
+  const completedCount = mediaList.filter((item) => item.status === 'completed').length;
+  const errorCount = mediaList.filter((item) => item.status === 'error').length;
+  const skippedCount = mediaList.filter((item) => item.status === 'no_change').length;
 
   // エラーファイルのみ抽出
   const errorFiles = mediaList
     .map((item, index) => ({ item, index }))
-    .filter(({ item }) => item.status === "error");
+    .filter(({ item }) => item.status === 'error');
 
   const scrollToRow = (index: number) => {
     const element = document.getElementById(`media-row-${index}`);
     if (element) {
-      element.scrollIntoView({ behavior: "smooth", block: "center" });
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
       // ハイライト効果
-      element.classList.add("ring-4", "ring-blue-400", "dark:ring-blue-500");
+      element.classList.add('ring-4', 'ring-blue-400', 'dark:ring-blue-500');
       setTimeout(() => {
-        element.classList.remove("ring-4", "ring-blue-400", "dark:ring-blue-500");
+        element.classList.remove('ring-4', 'ring-blue-400', 'dark:ring-blue-500');
       }, 2000);
     }
   };
 
   return (
-    <section className="bg-green-50 dark:bg-green-900/20 rounded-lg p-5 mb-5 border-l-4 border-green-600">
+    <section className="mb-5 rounded-lg border-l-4 border-green-600 bg-green-50 p-5 dark:bg-green-900/20">
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <h3 className="text-green-700 dark:text-green-400 font-semibold mb-3">Processing Complete</h3>
+          <h3 className="mb-3 font-semibold text-green-700 dark:text-green-400">
+            Processing Complete
+          </h3>
 
           <div className="space-y-2 text-sm">
             <div className="flex items-center gap-2">
-              <span className="text-green-600 dark:text-green-400 font-semibold">✓ Processed:</span>
-              <span className="text-gray-900 dark:text-gray-100 font-mono">{completedCount} files</span>
+              <span className="font-semibold text-green-600 dark:text-green-400">✓ Processed:</span>
+              <span className="font-mono text-gray-900 dark:text-gray-100">
+                {completedCount} files
+              </span>
             </div>
 
             {skippedCount > 0 && (
               <div className="flex items-center gap-2">
-                <span className="text-gray-600 dark:text-gray-400 font-semibold">⊘ Skipped:</span>
-                <span className="text-gray-900 dark:text-gray-100 font-mono">{skippedCount} files (no change)</span>
+                <span className="font-semibold text-gray-600 dark:text-gray-400">⊘ Skipped:</span>
+                <span className="font-mono text-gray-900 dark:text-gray-100">
+                  {skippedCount} files (no change)
+                </span>
               </div>
             )}
 
             {errorCount > 0 && (
               <div className="flex items-center gap-2">
-                <span className="text-red-600 dark:text-red-400 font-semibold">✗ Failed:</span>
-                <span className="text-gray-900 dark:text-gray-100 font-mono">{errorCount} files</span>
+                <span className="font-semibold text-red-600 dark:text-red-400">✗ Failed:</span>
+                <span className="font-mono text-gray-900 dark:text-gray-100">
+                  {errorCount} files
+                </span>
               </div>
             )}
           </div>
@@ -60,7 +68,7 @@ export function ProcessSummary({ mediaList, onRetryFailed }: ProcessSummaryProps
         {errorCount > 0 && onRetryFailed && (
           <button
             onClick={onRetryFailed}
-            className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors font-semibold text-sm shadow-sm hover:shadow-md"
+            className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-orange-600 hover:shadow-md"
           >
             Retry Failed Files
           </button>
@@ -77,11 +85,13 @@ export function ProcessSummary({ mediaList, onRetryFailed }: ProcessSummaryProps
               <li key={index}>
                 <button
                   onClick={() => scrollToRow(index)}
-                  className="text-left w-full px-3 py-2 rounded hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                  className="w-full rounded px-3 py-2 text-left transition-colors hover:bg-red-100 dark:hover:bg-red-900/30"
                 >
-                  <span className="text-gray-900 dark:text-gray-100 font-semibold">{item.file_name}</span>
+                  <span className="font-semibold text-gray-900 dark:text-gray-100">
+                    {item.file_name}
+                  </span>
                   {item.error_message && (
-                    <span className="block text-xs text-red-600 dark:text-red-400 mt-1">
+                    <span className="mt-1 block text-xs text-red-600 dark:text-red-400">
                       {item.error_message}
                     </span>
                   )}

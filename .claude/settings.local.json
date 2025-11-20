@@ -5,5 +5,12 @@
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "enabledMcpjsonServers": [
+    "playwright",
+    "memory",
+    "filesystem",
+    "ghe",
+    "serena"
+  ]
 }
