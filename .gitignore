@@ -27,3 +27,4 @@ dist-ssr
 nul
 .serena/
 .claude/settings.local.json
+.mcp.json
