@@ -206,10 +206,7 @@ fn get_exif_info(path: &Path) -> Result<ExifInfo> {
                 let datetime_str = String::from_utf8_lossy(datetime);
                 if let Ok(naive) = NaiveDateTime::parse_from_str(&datetime_str, "%Y:%m:%d %H:%M:%S")
                 {
-                    info.date = Some(DateTime::from_naive_utc_and_offset(
-                        naive,
-                        *Local::now().offset(),
-                    ));
+                    info.date = Local.from_local_datetime(&naive).single();
                 }
             }
         }
@@ -224,10 +221,7 @@ fn get_exif_info(path: &Path) -> Result<ExifInfo> {
                     if let Ok(naive) =
                         NaiveDateTime::parse_from_str(&datetime_str, "%Y:%m:%d %H:%M:%S")
                     {
-                        info.date = Some(DateTime::from_naive_utc_and_offset(
-                            naive,
-                            *Local::now().offset(),
-                        ));
+                        info.date = Local.from_local_datetime(&naive).single();
                     }
                 }
             }
@@ -366,10 +360,7 @@ fn extract_date_from_filename(filename: &str) -> Option<DateTime<Local>> {
         if let Some(naive) =
             chrono::NaiveDate::from_ymd_opt(year, month, day).and_then(|d| d.and_hms_opt(0, 0, 0))
         {
-            return Some(DateTime::from_naive_utc_and_offset(
-                naive,
-                *Local::now().offset(),
-            ));
+            return Local.from_local_datetime(&naive).single();
         }
     }
 
