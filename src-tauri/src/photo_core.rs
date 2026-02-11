@@ -349,7 +349,18 @@ fn extract_date_from_filename(filename: &str) -> Option<DateTime<Local>> {
         }
     }
 
-    // パターン3: YYYYMMDDのみ（時刻なし）
+    // パターン3: Unixタイムスタンプ（ミリ秒、13桁）
+    // 例: 1763020644906.jpg (Cshotバースト写真等)
+    let re_ts = Regex::new(r"^(\d{13})").ok()?;
+    if let Some(caps) = re_ts.captures(filename) {
+        let ts_ms: i64 = caps.get(1)?.as_str().parse().ok()?;
+        let ts_sec = ts_ms / 1000;
+        if let Some(dt) = chrono::DateTime::from_timestamp(ts_sec, 0) {
+            return Some(dt.with_timezone(&Local));
+        }
+    }
+
+    // パターン4: YYYYMMDDのみ（時刻なし）
     // 例: IMG-20250115-WA0001.jpg (WhatsApp)
     let re3 = Regex::new(r"(\d{4})(\d{2})(\d{2})").ok()?;
     if let Some(caps) = re3.captures(filename) {
