@@ -11,54 +11,37 @@ import { DirectorySelection } from './DirectorySelection';
 import { DefaultSettings } from './DefaultSettings';
 
 interface MainLayoutProps {
-  // Dark mode
   isDark: boolean;
   onToggleDarkMode: () => void;
-
-  // Directory selection
   inputDir: string;
   outputDir: string;
   onSelectInputDir: () => void;
   onSelectOutputDir: () => void;
-
-  // Default settings for photos
   defaultPhotoDateSource: 'Exif' | 'FileName' | 'FileCreated' | 'FileModified';
   defaultPhotoTimezoneOffset: string;
   defaultPhotoRotationMode: 'none' | 'exif' | '90' | '180' | '270';
   onPhotoDateSourceChange: (value: 'Exif' | 'FileName' | 'FileCreated' | 'FileModified') => void;
   onPhotoTimezoneOffsetChange: (value: string) => void;
   onPhotoRotationModeChange: (value: 'none' | 'exif' | '90' | '180' | '270') => void;
-
-  // Default settings for videos
   defaultVideoDateSource: 'Exif' | 'FileName' | 'FileCreated' | 'FileModified';
   defaultVideoTimezoneOffset: string;
   defaultVideoRotationMode: 'none' | 'exif' | '90' | '180' | '270';
   onVideoDateSourceChange: (value: 'Exif' | 'FileName' | 'FileCreated' | 'FileModified') => void;
   onVideoTimezoneOffsetChange: (value: string) => void;
   onVideoRotationModeChange: (value: 'none' | 'exif' | '90' | '180' | '270') => void;
-
-  // Actions
   onScanMedia: () => void;
   isScanning: boolean;
   onProcessMedia: () => void;
   onRetryFailed: () => void;
   isProcessing: boolean;
-
-  // Data
   mediaList: MediaInfo[];
   processResult: ProcessResult | null;
   table: Table<MediaInfo>;
   columns: ColumnDef<MediaInfo>[];
-
-  // Lightbox
   lightboxIndex: number | null;
   onSetLightboxIndex: (index: number | null) => void;
-
-  // Scroll to top
   showScrollToTop: boolean;
   onScrollToTop: () => void;
-
-  // Mock mode
   isMockMode: boolean;
 }
 
@@ -97,80 +80,165 @@ export function MainLayout({
   isMockMode,
 }: MainLayoutProps) {
   return (
-    <div className="flex min-h-screen flex-col bg-gray-50 p-5 dark:bg-gray-900">
+    <div
+      className="flex min-h-screen flex-col"
+      style={{
+        background: 'linear-gradient(180deg, #c8c8c8 0%, #b8b8b8 30%, #c0c0c0 100%)',
+      }}
+    >
+      {/* Mock mode banner */}
       {isMockMode && (
-        <div className="mb-4 rounded border-l-4 border-yellow-500 bg-yellow-100 p-3 dark:bg-yellow-900/30">
-          <p className="font-semibold text-yellow-800 dark:text-yellow-300">
-            🎨 モックモード - ブラウザでのUI開発用（Tauri APIは無効）
+        <div className="mock-banner px-4 py-2">
+          <p
+            className="text-center text-xs font-semibold"
+            style={{
+              color: '#c8901a',
+              fontFamily: '"Courier New", monospace',
+              letterSpacing: '0.08em',
+            }}
+          >
+            ◆ MOCK MODE — UI PREVIEW / Tauri API disabled ◆
           </p>
         </div>
       )}
+
+      {/* Nameplate header */}
       <Header isDark={isDark} onToggleDarkMode={onToggleDarkMode} />
 
-      <section className="mb-6 rounded-xl bg-white p-6 shadow-lg transition-shadow duration-300 hover:shadow-xl dark:bg-gray-800">
-        <div className="flex flex-col gap-5">
-          <DirectorySelection
-            inputDir={inputDir}
-            outputDir={outputDir}
-            onSelectInputDir={onSelectInputDir}
-            onSelectOutputDir={onSelectOutputDir}
-          />
+      {/* Main control panel */}
+      <div className="flex flex-1 flex-col gap-4 p-4">
+        {/* Top control section */}
+        <section className="section-panel rounded-sm p-5">
+          <div className="flex flex-col gap-4">
+            <DirectorySelection
+              inputDir={inputDir}
+              outputDir={outputDir}
+              onSelectInputDir={onSelectInputDir}
+              onSelectOutputDir={onSelectOutputDir}
+            />
 
-          <DefaultSettings
-            defaultPhotoDateSource={defaultPhotoDateSource}
-            defaultPhotoTimezoneOffset={defaultPhotoTimezoneOffset}
-            defaultPhotoRotationMode={defaultPhotoRotationMode}
-            onPhotoDateSourceChange={onPhotoDateSourceChange}
-            onPhotoTimezoneOffsetChange={onPhotoTimezoneOffsetChange}
-            onPhotoRotationModeChange={onPhotoRotationModeChange}
-            defaultVideoDateSource={defaultVideoDateSource}
-            defaultVideoTimezoneOffset={defaultVideoTimezoneOffset}
-            defaultVideoRotationMode={defaultVideoRotationMode}
-            onVideoDateSourceChange={onVideoDateSourceChange}
-            onVideoTimezoneOffsetChange={onVideoTimezoneOffsetChange}
-            onVideoRotationModeChange={onVideoRotationModeChange}
-          />
+            <DefaultSettings
+              defaultPhotoDateSource={defaultPhotoDateSource}
+              defaultPhotoTimezoneOffset={defaultPhotoTimezoneOffset}
+              defaultPhotoRotationMode={defaultPhotoRotationMode}
+              onPhotoDateSourceChange={onPhotoDateSourceChange}
+              onPhotoTimezoneOffsetChange={onPhotoTimezoneOffsetChange}
+              onPhotoRotationModeChange={onPhotoRotationModeChange}
+              defaultVideoDateSource={defaultVideoDateSource}
+              defaultVideoTimezoneOffset={defaultVideoTimezoneOffset}
+              defaultVideoRotationMode={defaultVideoRotationMode}
+              onVideoDateSourceChange={onVideoDateSourceChange}
+              onVideoTimezoneOffsetChange={onVideoTimezoneOffsetChange}
+              onVideoRotationModeChange={onVideoRotationModeChange}
+            />
 
-          <div className="flex justify-center gap-4 pt-2">
-            <button
-              onClick={onScanMedia}
-              disabled={!inputDir || isScanning}
-              className="flex items-center gap-2 rounded-lg bg-blue-500 px-6 py-3 text-base font-semibold text-white shadow-md transition-all hover:bg-blue-600 hover:shadow-lg active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
+            {/* Action buttons — transport section */}
+            <div
+              className="flex justify-center gap-5 pt-3"
+              style={{
+                borderTop: '1px solid #909090',
+              }}
             >
-              <HiOutlineMagnifyingGlass className="h-5 w-5" />
-              {isScanning ? 'Scanning...' : 'Scan Media Files'}
-            </button>
-            <button
-              onClick={onProcessMedia}
-              disabled={!inputDir || !outputDir || mediaList.length === 0 || isProcessing}
-              className="flex items-center gap-2 rounded-lg bg-green-600 px-6 py-3 text-base font-semibold text-white shadow-md transition-all hover:bg-green-700 hover:shadow-lg active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
-            >
-              <HiOutlineCog className={`h-5 w-5 ${isProcessing ? 'animate-spin' : ''}`} />
-              {isProcessing ? 'Processing...' : 'Process & Rename'}
-            </button>
+              <button
+                onClick={onScanMedia}
+                disabled={!inputDir || isScanning}
+                className="btn-hardware btn-hardware-scan flex items-center gap-2 rounded px-8 py-2.5 disabled:opacity-40"
+              >
+                <HiOutlineMagnifyingGlass className="h-4 w-4" />
+                {isScanning ? 'SCANNING...' : 'SCAN MEDIA'}
+              </button>
+              <button
+                onClick={onProcessMedia}
+                disabled={!inputDir || !outputDir || mediaList.length === 0 || isProcessing}
+                className="btn-hardware btn-hardware-primary flex items-center gap-2 rounded px-8 py-2.5 disabled:opacity-40"
+              >
+                <HiOutlineCog className={`h-4 w-4 ${isProcessing ? 'animate-spin' : ''}`} />
+                {isProcessing ? 'PROCESSING...' : 'PROCESS & RENAME'}
+              </button>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {processResult && (
-        <ProcessSummary
-          processResult={processResult}
-          mediaList={mediaList}
-          onRetryFailed={onRetryFailed}
-        />
-      )}
+        {/* Process result summary */}
+        {processResult && (
+          <ProcessSummary
+            processResult={processResult}
+            mediaList={mediaList}
+            onRetryFailed={onRetryFailed}
+          />
+        )}
 
-      <section className="mb-6 rounded-xl bg-white p-6 shadow-lg transition-shadow duration-300 hover:shadow-xl dark:bg-gray-800">
-        <h3 className="mb-4 font-semibold text-gray-800 dark:text-gray-100">
-          Media Files ({mediaList.length})
-        </h3>
-        {mediaList.length === 0 ? (
-          <p className="py-10 text-center text-lg text-gray-400 dark:text-gray-500">
-            No media files scanned yet. Select a folder and click &ldquo;Scan Media Files&rdquo;.
-          </p>
-        ) : (
-          <div className="relative -mx-6">
-            <div className="max-h-[70vh] overflow-auto">
+        {/* Media file grid — LED display panel */}
+        <section
+          className="flex flex-col overflow-hidden rounded-sm"
+          style={{
+            background: '#111',
+            border: '1px solid #333',
+            borderTop: '2px solid #555',
+            boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.6), 0 2px 4px rgba(0,0,0,0.3)',
+          }}
+        >
+          {/* Display panel header bar */}
+          <div
+            className="flex items-center gap-3 px-4 py-2"
+            style={{
+              background: 'linear-gradient(180deg, #282828, #1e1e1e)',
+              borderBottom: '1px solid #0a0a0a',
+            }}
+          >
+            <span className="label-channel" style={{ color: '#888', letterSpacing: '0.15em' }}>
+              MEDIA FILES
+            </span>
+            {/* File count readout */}
+            <span
+              className="led-display led-amber-text text-xs"
+              style={{ letterSpacing: '0.08em' }}
+            >
+              [{String(mediaList.length).padStart(4, '0')}]
+            </span>
+            <div className="flex-1" />
+            {/* Status indicator dots */}
+            {mediaList.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                {mediaList.some((m) => m.status === 'completed') && (
+                  <span
+                    className="inline-block h-2 w-2 rounded-full"
+                    style={{ background: '#44ff44', boxShadow: '0 0 4px rgba(68,255,68,0.8)' }}
+                    title="Completed"
+                  />
+                )}
+                {mediaList.some((m) => m.status === 'error') && (
+                  <span
+                    className="inline-block h-2 w-2 rounded-full"
+                    style={{ background: '#ff3333', boxShadow: '0 0 4px rgba(255,51,51,0.8)' }}
+                    title="Error"
+                  />
+                )}
+                {mediaList.some((m) => m.status === 'pending') && (
+                  <span
+                    className="inline-block h-2 w-2 rounded-full"
+                    style={{ background: '#ffaa00', boxShadow: '0 0 4px rgba(255,170,0,0.8)' }}
+                    title="Pending"
+                  />
+                )}
+              </div>
+            )}
+          </div>
+
+          {mediaList.length === 0 ? (
+            <div
+              className="flex items-center justify-center py-16"
+              style={{ background: '#0a0a0a' }}
+            >
+              <p
+                className="led-display text-sm"
+                style={{ color: '#2a2a2a', letterSpacing: '0.1em' }}
+              >
+                — NO MEDIA FILES LOADED — SELECT FOLDER AND SCAN —
+              </p>
+            </div>
+          ) : (
+            <div className="max-h-[65vh] overflow-auto" style={{ background: '#111' }}>
               <table className="w-full border-separate text-sm" style={{ borderSpacing: 0 }}>
                 <thead>
                   {table.getHeaderGroups().map((headerGroup) => (
@@ -179,7 +247,7 @@ export function MainLayout({
                         <th
                           key={header.id}
                           style={{ width: header.getSize() }}
-                          className="sticky top-0 z-20 bg-gray-700 px-2 py-3 text-left font-semibold text-white dark:bg-gray-900"
+                          className="table-header-cell sticky top-0 z-20 px-2 py-2.5 text-left"
                         >
                           {flexRender(header.column.columnDef.header, header.getContext())}
                         </th>
@@ -193,14 +261,18 @@ export function MainLayout({
                       <tr
                         key={row.id}
                         id={`media-row-${index}`}
-                        className={`border-b border-gray-200 transition-colors hover:bg-blue-50 dark:border-gray-700 dark:hover:bg-gray-700 ${
-                          index % 2 === 0
-                            ? 'bg-white dark:bg-gray-800'
-                            : 'bg-gray-50 dark:bg-gray-800/50'
-                        }`}
+                        className="table-row-hover"
+                        style={{
+                          background: index % 2 === 0 ? '#1c1c1c' : '#181818',
+                          borderBottom: '1px solid #222',
+                        }}
                       >
                         {row.getVisibleCells().map((cell) => (
-                          <td key={cell.id} className="px-2 py-3">
+                          <td
+                            key={cell.id}
+                            className="px-2 py-2"
+                            style={{ borderBottom: '1px solid #202020' }}
+                          >
                             {flexRender(cell.column.columnDef.cell, cell.getContext())}
                           </td>
                         ))}
@@ -209,9 +281,9 @@ export function MainLayout({
                         <tr key={`${row.id}-expanded`}>
                           <td
                             colSpan={columns.length}
-                            className="bg-gray-100 px-0 py-0 dark:bg-gray-900"
+                            className="px-0 py-0"
+                            style={{ background: '#0d0d0d', borderBottom: '1px solid #333' }}
                           >
-                            {/* 処理フロー表示エリア */}
                             <ProcessingFlow media={row.original} />
                           </td>
                         </tr>
@@ -221,11 +293,11 @@ export function MainLayout({
                 </tbody>
               </table>
             </div>
-          </div>
-        )}
-      </section>
+          )}
+        </section>
 
-      <Footer />
+        <Footer />
+      </div>
 
       {lightboxIndex !== null && mediaList[lightboxIndex] && (
         <LightBox

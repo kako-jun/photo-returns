@@ -146,12 +146,12 @@ mod tests {
         let base_time = Utc::now().with_timezone(&Local);
 
         let dates = vec![
-            Some(base_time),                         // 0
+            Some(base_time),                         // 0 - グループ1開始
             Some(base_time + Duration::seconds(1)),  // 1 - グループ1
             Some(base_time + Duration::seconds(2)),  // 2 - グループ1
             Some(base_time + Duration::seconds(3)),  // 3 - グループ1
-            Some(base_time + Duration::seconds(10)), // 4 - 間隔が空く
-            Some(base_time + Duration::seconds(11)), // 5
+            Some(base_time + Duration::seconds(10)), // 4 - 間隔が空く → グループ2開始
+            Some(base_time + Duration::seconds(11)), // 5 - グループ2
             Some(base_time + Duration::seconds(12)), // 6 - グループ2
             Some(base_time + Duration::seconds(13)), // 7 - グループ2
         ];
@@ -159,9 +159,11 @@ mod tests {
         let config = BurstDetectorConfig::default();
         let groups = detect_burst_groups(&dates, &config);
 
+        // グループ1: インデックス 0-3（4枚）
+        // グループ2: インデックス 4-7（4枚、item4が新グループの先頭）
         assert_eq!(groups.len(), 2); // 2つのグループ検出
-        assert_eq!(groups[0].count, 4); // 1つ目は4枚
-        assert_eq!(groups[1].count, 3); // 2つ目は3枚
+        assert_eq!(groups[0].count, 4); // 1つ目は4枚（0,1,2,3）
+        assert_eq!(groups[1].count, 4); // 2つ目は4枚（4,5,6,7）
     }
 
     #[test]

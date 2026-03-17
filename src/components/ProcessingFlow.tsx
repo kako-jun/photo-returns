@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { HiCheckCircle, HiXCircle, HiMinusCircle, HiDocumentText } from 'react-icons/hi2';
+import { HiDocumentText } from 'react-icons/hi2';
 import type { MediaInfo } from '../types';
 import { LogViewer } from './LogViewer';
 
-// EXIF orientationを角度に変換
 function getOrientationDegrees(orientation: number | null): string | null {
   if (!orientation) return null;
   switch (orientation) {
@@ -20,7 +19,6 @@ function getOrientationDegrees(orientation: number | null): string | null {
   }
 }
 
-// 処理フロー表示コンポーネント
 export function ProcessingFlow({ media }: { media: MediaInfo }) {
   const [showLogViewer, setShowLogViewer] = useState(false);
   const isError = media.status === 'error';
@@ -37,14 +35,12 @@ export function ProcessingFlow({ media }: { media: MediaInfo }) {
 
   const steps: ProcessingStep[] = [];
 
-  // ① Input File
   steps.push({
     label: 'Input File',
     status: 'success',
     details: `${media.file_name} (${(media.file_size / (1024 * 1024)).toFixed(2)} MB)`,
   });
 
-  // ② Date Source
   if (media.date_taken) {
     steps.push({
       label: 'Date Source',
@@ -52,14 +48,9 @@ export function ProcessingFlow({ media }: { media: MediaInfo }) {
       details: `${media.date_source} → ${new Date(media.date_taken).toLocaleString()}`,
     });
   } else {
-    steps.push({
-      label: 'Date Source',
-      status: 'error',
-      details: 'No date found',
-    });
+    steps.push({ label: 'Date Source', status: 'error', details: 'No date found' });
   }
 
-  // ③ Burst Detection
   if (media.burst_group_id !== null) {
     steps.push({
       label: 'Burst Detection',
@@ -67,14 +58,9 @@ export function ProcessingFlow({ media }: { media: MediaInfo }) {
       details: `Group ${media.burst_group_id}, Index ${media.burst_index}`,
     });
   } else {
-    steps.push({
-      label: 'Burst Detection',
-      status: 'skip',
-      details: 'Not in burst group',
-    });
+    steps.push({ label: 'Burst Detection', status: 'skip', details: 'Not in burst group' });
   }
 
-  // ④ TZ Correction
   if (media.timezone_offset && media.timezone_offset !== 'none') {
     steps.push({
       label: 'TZ Correction',
@@ -82,29 +68,15 @@ export function ProcessingFlow({ media }: { media: MediaInfo }) {
       details: `Applied ${media.timezone_offset === 'exif' ? 'EXIF' : media.timezone_offset}`,
     });
   } else {
-    steps.push({
-      label: 'TZ Correction',
-      status: 'skip',
-      details: 'Not applied',
-    });
+    steps.push({ label: 'TZ Correction', status: 'skip', details: 'Not applied' });
   }
 
-  // ⑤ File Naming
   if (media.new_name) {
-    steps.push({
-      label: 'File Naming',
-      status: 'success',
-      details: media.new_name,
-    });
+    steps.push({ label: 'File Naming', status: 'success', details: media.new_name });
   } else {
-    steps.push({
-      label: 'File Naming',
-      status: 'error',
-      details: 'Name generation failed',
-    });
+    steps.push({ label: 'File Naming', status: 'error', details: 'Name generation failed' });
   }
 
-  // ⑥ Rotation
   const rotationMode =
     media.rotation_mode ??
     (media.exif_orientation && media.exif_orientation !== 1 ? 'exif' : 'none');
@@ -117,14 +89,9 @@ export function ProcessingFlow({ media }: { media: MediaInfo }) {
       details: `Rotate ${degrees}`,
     });
   } else {
-    steps.push({
-      label: 'Rotation',
-      status: 'skip',
-      details: 'No rotation needed',
-    });
+    steps.push({ label: 'Rotation', status: 'skip', details: 'No rotation needed' });
   }
 
-  // ⑦ Directory Creation
   if (media.new_path) {
     const pathParts = media.new_path.split(/[\\/]/);
     const year = pathParts[pathParts.length - 4];
@@ -136,14 +103,9 @@ export function ProcessingFlow({ media }: { media: MediaInfo }) {
       details: `${year} / ${month} / ${day}`,
     });
   } else {
-    steps.push({
-      label: 'Directory Creation',
-      status: 'pending',
-      details: 'Pending',
-    });
+    steps.push({ label: 'Directory Creation', status: 'pending', details: 'Pending' });
   }
 
-  // ⑧ File Processing
   if (isCompleted) {
     steps.push({
       label: 'File Processing',
@@ -151,11 +113,7 @@ export function ProcessingFlow({ media }: { media: MediaInfo }) {
       details: 'File copied successfully',
     });
   } else if (isProcessing) {
-    steps.push({
-      label: 'File Processing',
-      status: 'pending',
-      details: 'Processing...',
-    });
+    steps.push({ label: 'File Processing', status: 'pending', details: 'Processing...' });
   } else if (isError) {
     steps.push({
       label: 'File Processing',
@@ -163,20 +121,11 @@ export function ProcessingFlow({ media }: { media: MediaInfo }) {
       details: media.error_message || 'Unknown error',
     });
   } else {
-    steps.push({
-      label: 'File Processing',
-      status: 'pending',
-      details: 'Waiting to start',
-    });
+    steps.push({ label: 'File Processing', status: 'pending', details: 'Waiting to start' });
   }
 
-  // ⑨ Complete/Error
   if (isCompleted) {
-    steps.push({
-      label: 'Complete',
-      status: 'success',
-      details: '✓ Successfully processed',
-    });
+    steps.push({ label: 'Complete', status: 'success', details: 'Successfully processed' });
   } else if (isError) {
     steps.push({
       label: 'Error',
@@ -184,71 +133,112 @@ export function ProcessingFlow({ media }: { media: MediaInfo }) {
       details: media.error_message || 'Processing failed',
     });
   } else {
-    steps.push({
-      label: 'Status',
-      status: 'pending',
-      details: media.status || 'pending',
-    });
+    steps.push({ label: 'Status', status: 'pending', details: media.status || 'pending' });
   }
 
-  // 2列レイアウト用に分割
   const midPoint = Math.ceil(steps.length / 2);
   const leftSteps = steps.slice(0, midPoint);
   const rightSteps = steps.slice(midPoint);
 
-  const renderStepColumn = (columnSteps: ProcessingStep[], startIndex: number) => {
-    return (
-      <div className="space-y-3">
-        {columnSteps.map((step, index) => {
-          const actualIndex = startIndex + index;
-          const statusIcons = {
-            success: <HiCheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />,
-            error: <HiXCircle className="h-5 w-5 text-red-600 dark:text-red-400" />,
-            skip: <HiMinusCircle className="h-5 w-5 text-gray-400 dark:text-gray-500" />,
-            pending: (
-              <div className="h-5 w-5 rounded-full border-2 border-orange-500 dark:border-orange-400"></div>
-            ),
-          };
-          const statusColors = {
-            success: 'text-green-700 dark:text-green-300',
-            error: 'text-red-700 dark:text-red-300',
-            skip: 'text-gray-500 dark:text-gray-400',
-            pending: 'text-orange-700 dark:text-orange-300',
-          };
-          return (
-            <div key={actualIndex} className="flex items-start gap-3">
-              <div className="mt-0.5 flex-shrink-0">{statusIcons[step.status]}</div>
-              <div className="min-w-0 flex-1">
-                <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                  {actualIndex + 1}. {step.label}
-                </h4>
-                <p className={`mt-1 text-xs ${statusColors[step.status]}`}>{step.details}</p>
+  const statusConfig = {
+    success: {
+      icon: '●',
+      iconColor: '#44ff44',
+      iconGlow: '0 0 6px rgba(68,255,68,0.7)',
+      labelColor: '#909090',
+      detailColor: '#44ff44',
+    },
+    error: {
+      icon: '✕',
+      iconColor: '#ff3333',
+      iconGlow: '0 0 6px rgba(255,51,51,0.7)',
+      labelColor: '#909090',
+      detailColor: '#ff4444',
+    },
+    skip: {
+      icon: '○',
+      iconColor: '#444',
+      iconGlow: 'none',
+      labelColor: '#555',
+      detailColor: '#555',
+    },
+    pending: {
+      icon: '◌',
+      iconColor: '#ffaa00',
+      iconGlow: '0 0 5px rgba(255,170,0,0.6)',
+      labelColor: '#888',
+      detailColor: '#ffaa00',
+    },
+  };
+
+  const renderStepColumn = (columnSteps: ProcessingStep[], startIndex: number) => (
+    <div className="space-y-2.5">
+      {columnSteps.map((step, index) => {
+        const actualIndex = startIndex + index;
+        const cfg = statusConfig[step.status];
+        return (
+          <div key={actualIndex} className="flex items-start gap-2.5">
+            <span
+              className="mt-0.5 flex-shrink-0 font-mono text-sm"
+              style={{
+                color: cfg.iconColor,
+                textShadow: cfg.iconGlow,
+                width: '14px',
+                textAlign: 'center',
+              }}
+            >
+              {cfg.icon}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flow-step-label" style={{ color: cfg.labelColor }}>
+                {String(actualIndex + 1).padStart(2, '0')}. {step.label.toUpperCase()}
+              </div>
+              <div
+                className="flow-step-detail mt-0.5"
+                style={{
+                  color: cfg.detailColor,
+                  textShadow:
+                    step.status !== 'skip' && step.status !== 'pending' ? cfg.iconGlow : 'none',
+                }}
+              >
+                {step.details}
               </div>
             </div>
-          );
-        })}
-      </div>
-    );
-  };
+          </div>
+        );
+      })}
+    </div>
+  );
 
   return (
     <>
-      <div className="border-t-2 border-blue-500 p-6 dark:border-blue-400">
-        <h3 className="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-          Processing Flow
-        </h3>
-        <div className="grid grid-cols-2 gap-6">
+      <div className="flow-panel px-6 py-5">
+        <div
+          className="led-display mb-4 text-xs"
+          style={{ color: '#555', letterSpacing: '0.15em' }}
+        >
+          ▶ PROCESSING FLOW — {media.file_name}
+        </div>
+        <div className="grid grid-cols-2 gap-8">
           <div>{renderStepColumn(leftSteps, 0)}</div>
           <div>{renderStepColumn(rightSteps, midPoint)}</div>
         </div>
         <div className="mt-4 flex justify-end">
           <button
             onClick={() => setShowLogViewer(true)}
-            className="flex items-center gap-2 rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-600 hover:shadow-md"
+            className="btn-hardware flex items-center gap-2 rounded px-3 py-1.5"
+            style={{
+              background: 'linear-gradient(180deg, #252525, #1a1a1a, #202020)',
+              color: '#44aaff',
+              borderColor: '#333',
+              textShadow: '0 0 5px rgba(68,170,255,0.4)',
+            }}
             title="View detailed processing logs"
           >
-            <HiDocumentText className="h-4 w-4" />
-            View Logs ({media.logs?.length || 0})
+            <HiDocumentText className="h-3.5 w-3.5" />
+            <span className="label-channel" style={{ color: '#44aaff' }}>
+              VIEW LOGS [{media.logs?.length || 0}]
+            </span>
           </button>
         </div>
       </div>

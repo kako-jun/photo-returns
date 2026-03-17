@@ -26,7 +26,7 @@ export interface MediaInfo {
   file_size: number;
   burst_group_id: number | null;
   burst_index: number | null;
-  date_source: 'Exif' | 'FileName' | 'FileCreated' | 'FileModified' | 'None';
+  date_source: 'Exif' | 'QuickTime' | 'FileName' | 'FileCreated' | 'FileModified' | 'None';
   exif_orientation: number | null;
   rotation_applied: boolean;
   // ユーザー選択：TZオフセット補正（例："+09:00", "none"）

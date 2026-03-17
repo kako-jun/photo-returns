@@ -175,6 +175,7 @@ function App() {
         const getDateForSource = (source: string) => {
           switch (source) {
             case 'Exif':
+            case 'QuickTime':
               return item.exif_date;
             case 'FileName':
               return item.filename_date;
@@ -226,8 +227,15 @@ function App() {
     }
 
     // Directory validation
-    const normalizedInput = inputDir.toLowerCase().replace(/\\/g, '/');
-    const normalizedOutput = outputDir.toLowerCase().replace(/\\/g, '/');
+    // Windows はケース非依存、Linux/macOS はケース依存のため、
+    // Windows のみ小文字化してスラッシュ統一、他はスラッシュ統一のみ行う。
+    const isWindows = inputDir.includes('\\') || /^[A-Za-z]:/.test(inputDir);
+    const normalizePath = (p: string) => {
+      const withForwardSlash = p.replace(/\\/g, '/').replace(/\/+$/, '');
+      return isWindows ? withForwardSlash.toLowerCase() : withForwardSlash;
+    };
+    const normalizedInput = normalizePath(inputDir);
+    const normalizedOutput = normalizePath(outputDir);
 
     // Check if output is inside input (dangerous)
     if (normalizedOutput.startsWith(normalizedInput + '/')) {
@@ -270,9 +278,13 @@ function App() {
       setProcessResult(result);
 
       // 処理結果を反映
+      // Rust から返る original_path はプラットフォーム依存のセパレータを持つ場合があるため、
+      // スラッシュ統一後に比較する（Windowsでの \\ vs / 問題を回避）
+      const normalizeForCompare = (p: string) => p.replace(/\\/g, '/');
       const updatedMedia = mediaList.map((item) => {
+        const normalizedItem = normalizeForCompare(item.original_path);
         const processed = result.media.find(
-          (m: MediaInfo) => m.original_path === item.original_path
+          (m: MediaInfo) => normalizeForCompare(m.original_path) === normalizedItem
         );
         return {
           ...item,

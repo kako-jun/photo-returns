@@ -1,4 +1,4 @@
-import { HiPhoto, HiFilm, HiChevronDown } from 'react-icons/hi2';
+import { HiPhoto, HiFilm } from 'react-icons/hi2';
 
 interface DefaultSettingsProps {
   // Photo settings
@@ -18,6 +18,47 @@ interface DefaultSettingsProps {
   onVideoRotationModeChange: (value: 'none' | 'exif' | '90' | '180' | '270') => void;
 }
 
+function SelectorRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2">
+      <label className="label-channel min-w-[72px]">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const tzOptions = [
+  'none',
+  'exif',
+  '-12:00',
+  '-11:00',
+  '-10:00',
+  '-09:00',
+  '-08:00',
+  '-07:00',
+  '-06:00',
+  '-05:00',
+  '-04:00',
+  '-03:00',
+  '-02:00',
+  '-01:00',
+  '+00:00',
+  '+01:00',
+  '+02:00',
+  '+03:00',
+  '+04:00',
+  '+05:00',
+  '+06:00',
+  '+07:00',
+  '+08:00',
+  '+09:00',
+  '+10:00',
+  '+11:00',
+  '+12:00',
+  '+13:00',
+  '+14:00',
+];
+
 export function DefaultSettings({
   defaultPhotoDateSource,
   defaultPhotoTimezoneOffset,
@@ -33,22 +74,40 @@ export function DefaultSettings({
   onVideoRotationModeChange,
 }: DefaultSettingsProps) {
   return (
-    <div className="border-t border-gray-200 pt-4 dark:border-gray-700">
-      <h3 className="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
-        Default Settings
-      </h3>
-      <div className="grid grid-cols-2 gap-6">
-        {/* 静止画の設定 */}
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/10">
-          <h4 className="mb-2 flex items-center gap-1 text-xs font-semibold text-blue-700 dark:text-blue-300">
-            <HiPhoto className="h-4 w-4" />
-            Photo
+    <div
+      className="pt-3"
+      style={{
+        borderTop: '1px solid #909090',
+        borderTopColor: '#888',
+      }}
+    >
+      {/* Section label */}
+      <div className="mb-3 flex items-center gap-2">
+        <span className="label-engraved">Default Settings</span>
+        <div
+          className="flex-1"
+          style={{
+            height: '1px',
+            background: 'linear-gradient(90deg, #707070, transparent)',
+          }}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {/* Photo channel */}
+        <div className="settings-panel-photo rounded p-3">
+          <h4 className="mb-2.5 flex items-center gap-1.5">
+            <HiPhoto className="h-3.5 w-3.5" style={{ color: '#6090d0' }} />
+            <span
+              className="label-channel"
+              style={{ color: '#6090d0', textShadow: '0 0 6px rgba(80,130,220,0.5)' }}
+            >
+              Photo Channel
+            </span>
           </h4>
+
           <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <label className="min-w-[80px] text-xs font-medium text-gray-700 dark:text-gray-300">
-                Date Source:
-              </label>
+            <SelectorRow label="DATE SRC">
               <div className="relative flex-1">
                 <select
                   value={defaultPhotoDateSource}
@@ -57,83 +116,39 @@ export function DefaultSettings({
                       e.target.value as 'Exif' | 'FileName' | 'FileCreated' | 'FileModified'
                     )
                   }
-                  className="w-full cursor-pointer appearance-none rounded border border-gray-300 bg-white px-2 py-1 pr-6 text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                  className="selector-hardware w-full rounded px-2 py-1 pr-6"
                 >
-                  <option
-                    value="Exif"
-                    className="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                  >
-                    EXIF
-                  </option>
-                  <option
-                    value="FileName"
-                    className="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                  >
-                    FileName
-                  </option>
-                  <option
-                    value="FileCreated"
-                    className="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                  >
-                    Created
-                  </option>
-                  <option
-                    value="FileModified"
-                    className="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                  >
-                    Modified
-                  </option>
+                  <option value="Exif">EXIF</option>
+                  <option value="FileName">FILENAME</option>
+                  <option value="FileCreated">CREATED</option>
+                  <option value="FileModified">MODIFIED</option>
                 </select>
-                <HiChevronDown className="pointer-events-none absolute top-1/2 right-1 h-4 w-4 -translate-y-1/2 text-gray-600 dark:text-gray-400" />
+                <span className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-xs text-gray-500">
+                  ▾
+                </span>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="min-w-[80px] text-xs font-medium text-gray-700 dark:text-gray-300">
-                TZ Correction:
-              </label>
+            </SelectorRow>
+
+            <SelectorRow label="TZ CORR">
               <div className="relative flex-1">
                 <select
                   value={defaultPhotoTimezoneOffset}
                   onChange={(e) => onPhotoTimezoneOffsetChange(e.target.value)}
-                  className="w-full cursor-pointer appearance-none rounded border border-gray-300 bg-white px-2 py-1 pr-6 text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                  className="selector-hardware w-full rounded px-2 py-1 pr-6"
                 >
-                  <option value="none">None</option>
-                  <option value="exif">EXIF</option>
-                  <option value="-12:00">-12:00</option>
-                  <option value="-11:00">-11:00</option>
-                  <option value="-10:00">-10:00</option>
-                  <option value="-09:00">-09:00</option>
-                  <option value="-08:00">-08:00</option>
-                  <option value="-07:00">-07:00</option>
-                  <option value="-06:00">-06:00</option>
-                  <option value="-05:00">-05:00</option>
-                  <option value="-04:00">-04:00</option>
-                  <option value="-03:00">-03:00</option>
-                  <option value="-02:00">-02:00</option>
-                  <option value="-01:00">-01:00</option>
-                  <option value="+00:00">+00:00</option>
-                  <option value="+01:00">+01:00</option>
-                  <option value="+02:00">+02:00</option>
-                  <option value="+03:00">+03:00</option>
-                  <option value="+04:00">+04:00</option>
-                  <option value="+05:00">+05:00</option>
-                  <option value="+06:00">+06:00</option>
-                  <option value="+07:00">+07:00</option>
-                  <option value="+08:00">+08:00</option>
-                  <option value="+09:00">+09:00</option>
-                  <option value="+10:00">+10:00</option>
-                  <option value="+11:00">+11:00</option>
-                  <option value="+12:00">+12:00</option>
-                  <option value="+13:00">+13:00</option>
-                  <option value="+14:00">+14:00</option>
+                  {tzOptions.map((tz) => (
+                    <option key={tz} value={tz}>
+                      {tz.toUpperCase()}
+                    </option>
+                  ))}
                 </select>
-                <HiChevronDown className="pointer-events-none absolute top-1/2 right-1 h-4 w-4 -translate-y-1/2 text-gray-600 dark:text-gray-400" />
+                <span className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-xs text-gray-500">
+                  ▾
+                </span>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="min-w-[80px] text-xs font-medium text-gray-700 dark:text-gray-300">
-                Rotation:
-              </label>
+            </SelectorRow>
+
+            <SelectorRow label="ROTATION">
               <div className="relative flex-1">
                 <select
                   value={defaultPhotoRotationMode}
@@ -142,31 +157,36 @@ export function DefaultSettings({
                       e.target.value as 'none' | 'exif' | '90' | '180' | '270'
                     )
                   }
-                  className="w-full cursor-pointer appearance-none rounded border border-gray-300 bg-white px-2 py-1 pr-6 text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                  className="selector-hardware w-full rounded px-2 py-1 pr-6"
                 >
-                  <option value="none">None</option>
+                  <option value="none">NONE</option>
                   <option value="exif">EXIF</option>
                   <option value="90">90°</option>
                   <option value="180">180°</option>
                   <option value="270">270°</option>
                 </select>
-                <HiChevronDown className="pointer-events-none absolute top-1/2 right-1 h-4 w-4 -translate-y-1/2 text-gray-600 dark:text-gray-400" />
+                <span className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-xs text-gray-500">
+                  ▾
+                </span>
               </div>
-            </div>
+            </SelectorRow>
           </div>
         </div>
 
-        {/* 動画の設定 */}
-        <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 dark:border-purple-800 dark:bg-purple-900/10">
-          <h4 className="mb-2 flex items-center gap-1 text-xs font-semibold text-purple-700 dark:text-purple-300">
-            <HiFilm className="h-4 w-4" />
-            Video
+        {/* Video channel */}
+        <div className="settings-panel-video rounded p-3">
+          <h4 className="mb-2.5 flex items-center gap-1.5">
+            <HiFilm className="h-3.5 w-3.5" style={{ color: '#a060d0' }} />
+            <span
+              className="label-channel"
+              style={{ color: '#a060d0', textShadow: '0 0 6px rgba(160,80,220,0.5)' }}
+            >
+              Video Channel
+            </span>
           </h4>
+
           <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <label className="min-w-[80px] text-xs font-medium text-gray-700 dark:text-gray-300">
-                Date Source:
-              </label>
+            <SelectorRow label="DATE SRC">
               <div className="relative flex-1">
                 <select
                   value={defaultVideoDateSource}
@@ -175,76 +195,39 @@ export function DefaultSettings({
                       e.target.value as 'Exif' | 'FileName' | 'FileCreated' | 'FileModified'
                     )
                   }
-                  className="w-full cursor-pointer appearance-none rounded border border-gray-300 bg-white px-2 py-1 pr-6 text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                  className="selector-hardware w-full rounded px-2 py-1 pr-6"
                 >
-                  <option
-                    value="FileName"
-                    className="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                  >
-                    FileName
-                  </option>
-                  <option
-                    value="FileCreated"
-                    className="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                  >
-                    Created
-                  </option>
-                  <option
-                    value="FileModified"
-                    className="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                  >
-                    Modified
-                  </option>
+                  <option value="Exif">EXIF</option>
+                  <option value="FileName">FILENAME</option>
+                  <option value="FileCreated">CREATED</option>
+                  <option value="FileModified">MODIFIED</option>
                 </select>
-                <HiChevronDown className="pointer-events-none absolute top-1/2 right-1 h-4 w-4 -translate-y-1/2 text-gray-600 dark:text-gray-400" />
+                <span className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-xs text-gray-500">
+                  ▾
+                </span>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="min-w-[80px] text-xs font-medium text-gray-700 dark:text-gray-300">
-                TZ Correction:
-              </label>
+            </SelectorRow>
+
+            <SelectorRow label="TZ CORR">
               <div className="relative flex-1">
                 <select
                   value={defaultVideoTimezoneOffset}
                   onChange={(e) => onVideoTimezoneOffsetChange(e.target.value)}
-                  className="w-full cursor-pointer appearance-none rounded border border-gray-300 bg-white px-2 py-1 pr-6 text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                  className="selector-hardware w-full rounded px-2 py-1 pr-6"
                 >
-                  <option value="none">None</option>
-                  <option value="-12:00">-12:00</option>
-                  <option value="-11:00">-11:00</option>
-                  <option value="-10:00">-10:00</option>
-                  <option value="-09:00">-09:00</option>
-                  <option value="-08:00">-08:00</option>
-                  <option value="-07:00">-07:00</option>
-                  <option value="-06:00">-06:00</option>
-                  <option value="-05:00">-05:00</option>
-                  <option value="-04:00">-04:00</option>
-                  <option value="-03:00">-03:00</option>
-                  <option value="-02:00">-02:00</option>
-                  <option value="-01:00">-01:00</option>
-                  <option value="+00:00">+00:00</option>
-                  <option value="+01:00">+01:00</option>
-                  <option value="+02:00">+02:00</option>
-                  <option value="+03:00">+03:00</option>
-                  <option value="+04:00">+04:00</option>
-                  <option value="+05:00">+05:00</option>
-                  <option value="+06:00">+06:00</option>
-                  <option value="+07:00">+07:00</option>
-                  <option value="+08:00">+08:00</option>
-                  <option value="+09:00">+09:00</option>
-                  <option value="+10:00">+10:00</option>
-                  <option value="+11:00">+11:00</option>
-                  <option value="+12:00">+12:00</option>
-                  <option value="+13:00">+13:00</option>
-                  <option value="+14:00">+14:00</option>
+                  {tzOptions.map((tz) => (
+                    <option key={tz} value={tz}>
+                      {tz.toUpperCase()}
+                    </option>
+                  ))}
                 </select>
-                <HiChevronDown className="pointer-events-none absolute top-1/2 right-1 h-4 w-4 -translate-y-1/2 text-gray-600 dark:text-gray-400" />
+                <span className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-xs text-gray-500">
+                  ▾
+                </span>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="min-w-[80px] text-xs font-medium text-gray-700 dark:text-gray-300">
-                Rotation:
-              </label>
+            </SelectorRow>
+
+            <SelectorRow label="ROTATION">
               <div className="relative flex-1">
                 <select
                   value={defaultVideoRotationMode}
@@ -253,16 +236,18 @@ export function DefaultSettings({
                       e.target.value as 'none' | 'exif' | '90' | '180' | '270'
                     )
                   }
-                  className="w-full cursor-pointer appearance-none rounded border border-gray-300 bg-white px-2 py-1 pr-6 text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                  className="selector-hardware w-full rounded px-2 py-1 pr-6"
                 >
-                  <option value="none">None</option>
+                  <option value="none">NONE</option>
                   <option value="90">90°</option>
                   <option value="180">180°</option>
                   <option value="270">270°</option>
                 </select>
-                <HiChevronDown className="pointer-events-none absolute top-1/2 right-1 h-4 w-4 -translate-y-1/2 text-gray-600 dark:text-gray-400" />
+                <span className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-xs text-gray-500">
+                  ▾
+                </span>
               </div>
-            </div>
+            </SelectorRow>
           </div>
         </div>
       </div>

@@ -56,6 +56,8 @@ pub enum MediaType {
 pub enum DateSource {
     /// EXIF撮影日時から取得
     Exif,
+    /// QuickTime/MP4メタデータから取得（動画）
+    QuickTime,
     /// ファイル名から抽出
     FileName,
     /// ファイル作成日時から取得
@@ -480,7 +482,7 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
                 (Some(exif_date), DateSource::Exif, exif_info.subsec)
             } else if let Some(video_date) = video_date {
                 // 動画のQuickTimeメタデータ
-                (Some(video_date), DateSource::Exif, None) // ExifとしてマークするがQuickTimeデータ
+                (Some(video_date), DateSource::QuickTime, None)
             } else if let Some(filename_date) = filename_date {
                 (Some(filename_date), DateSource::FileName, None)
             } else if let Some(created_date) = file_created_date {
@@ -501,6 +503,7 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
                     media_type: mtype,
                     date_taken: Some(date),
                     subsec_time: subsec,
+                    // タイムゾーンはEXIFデータがある画像のみ（動画のQuickTimeはUTC固定のためNone）
                     timezone: if date_source == DateSource::Exif {
                         exif_info.timezone.clone()
                     } else {
@@ -540,6 +543,15 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
     let mut result = Arc::try_unwrap(media)
         .map(|mutex| mutex.into_inner().unwrap())
         .unwrap_or_else(|arc| arc.lock().unwrap().clone());
+
+    // 並列処理後は順序が不定のため、撮影日時でソートしてからバースト検出を行う
+    // date_taken が None のファイルは末尾に移動する
+    result.sort_by(|a, b| match (a.date_taken, b.date_taken) {
+        (Some(da), Some(db)) => da.cmp(&db),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.file_name.cmp(&b.file_name),
+    });
 
     // バースト検出を実行
     let dates: Vec<Option<DateTime<Local>>> = result.iter().map(|m| m.date_taken).collect();
@@ -618,6 +630,10 @@ pub fn process_media(
     let errors = Arc::new(Mutex::new(Vec::new()));
     let success_count = Arc::new(Mutex::new(0_usize));
 
+    // TOCTOU競合防止: ファイル名スロット割り当てとコピーをアトミックに行うためのロック。
+    // 並列処理時に複数スレッドが同じ出力パスへ同時書き込みするのを防ぐ。
+    let file_slot_lock = Arc::new(Mutex::new(()));
+
     let processor = |item: &mut MediaInfo| {
         if let Some(date) = item.date_taken {
             item.add_log(
@@ -658,42 +674,53 @@ pub fn process_media(
                 }
             };
 
-            let mut target_path = target_dir.join(&item.new_name);
+            // ファイル名スロット割り当てとコピーをアトミックに行う（TOCTOU競合防止）
+            // ロック保持中に exists() チェック → コピーまで完了させることで、
+            // 別スレッドが同じ名前のファイルを二重コピーするのを防ぐ。
+            let copy_result: Result<PathBuf, String> = {
+                let _guard = file_slot_lock.lock().unwrap();
 
-            // 重複ファイル名の処理（連番追加）
-            let mut counter = 1;
-            while target_path.exists() {
-                let extension = item
-                    .original_path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("");
+                let mut candidate = target_dir.join(&item.new_name);
+                let mut counter = 1u32;
 
-                // ベースファイル名を生成（ミリ秒を含む場合と含まない場合）
-                let base_name = if let Some(ms) = item.subsec_time {
-                    format!("{}-{:03}", date.format("%Y-%m-%d_%H-%M-%S"), ms)
-                } else {
-                    date.format("%Y-%m-%d_%H-%M-%S").to_string()
-                };
+                while candidate.exists() {
+                    let extension = item
+                        .original_path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("");
 
-                let new_name = format!("{base_name}_{counter:02}.{extension}");
-                target_path = target_dir.join(&new_name);
-                counter += 1;
-            }
+                    let base_name = if let Some(ms) = item.subsec_time {
+                        format!("{}-{:03}", date.format("%Y-%m-%d_%H-%M-%S"), ms)
+                    } else {
+                        date.format("%Y-%m-%d_%H-%M-%S").to_string()
+                    };
 
-            if counter > 1 {
-                item.add_log(
-                    LogLevel::Warning,
-                    format!(
-                        "File name conflict detected, using counter: {}",
-                        counter - 1
-                    ),
-                );
-            }
+                    candidate = target_dir.join(format!("{base_name}_{counter:02}.{extension}"));
+                    counter += 1;
+                }
 
-            // ファイルをコピー
-            match fs::copy(&item.original_path, &target_path) {
-                Ok(_) => {
+                if counter > 1 {
+                    item.add_log(
+                        LogLevel::Warning,
+                        format!(
+                            "File name conflict detected, using suffix: _{:02}",
+                            counter - 1
+                        ),
+                    );
+                }
+
+                // ロック保持中にコピーしてスロットを確保する
+                fs::copy(&item.original_path, &candidate)
+                    .map(|_| candidate)
+                    .map_err(|e| {
+                        format!("Failed to copy {}: {}", item.original_path.display(), e)
+                    })
+                // ロック解放
+            };
+
+            match copy_result {
+                Ok(target_path) => {
                     item.new_path = target_path.clone();
                     item.add_log(
                         LogLevel::Info,
@@ -708,7 +735,6 @@ pub fn process_media(
                             // 回転角度を計算
                             let degrees = match rotation_mode {
                                 "exif" => {
-                                    // EXIF orientationから角度を取得
                                     if let Some(ori) = item.exif_orientation {
                                         match ori {
                                             1 => 0,
@@ -733,10 +759,8 @@ pub fn process_media(
                                     format!("Applying rotation: {degrees}°"),
                                 );
 
-                                // 画像を開く
                                 match image::open(&target_path) {
                                     Ok(img) => {
-                                        // 回転適用
                                         let rotated = match degrees {
                                             90 => img.rotate90(),
                                             180 => img.rotate180(),
@@ -744,7 +768,6 @@ pub fn process_media(
                                             _ => img,
                                         };
 
-                                        // 上書き保存
                                         match rotated.save(&target_path) {
                                             Ok(_) => {
                                                 item.add_log(
@@ -753,15 +776,16 @@ pub fn process_media(
                                                 );
                                                 item.rotation_applied = true;
 
-                                                // EXIF Orientationを1にリセット
-                                                if let Err(e) = orientation::reset_exif_orientation(
-                                                    &target_path,
-                                                ) {
+                                                if let Err(e) =
+                                                    orientation::reset_exif_orientation(
+                                                        &target_path,
+                                                    )
+                                                {
                                                     item.add_log(
                                                         LogLevel::Warning,
                                                         format!(
-                                                            "Failed to reset EXIF orientation: {e}"
-                                                        ),
+                                                        "Failed to reset EXIF orientation: {e}"
+                                                    ),
                                                     );
                                                 } else {
                                                     item.add_log(
@@ -791,8 +815,7 @@ pub fn process_media(
 
                     *success_count.lock().unwrap() += 1;
                 }
-                Err(e) => {
-                    let msg = format!("Failed to copy {}: {}", item.original_path.display(), e);
+                Err(msg) => {
                     item.add_log(LogLevel::Error, &msg);
                     errors.lock().unwrap().push(msg);
                 }

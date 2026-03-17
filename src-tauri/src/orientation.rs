@@ -176,15 +176,36 @@ pub fn reset_exif_orientation(image_path: &Path) -> Result<()> {
         };
 
         // TIFFデータ内でOrientationタグを検索
+        // modified_data は exif_data（EXIFヘッダー6バイト含む）のコピー。
+        // tiff_data = &exif_data[6..] なので、tiff_data の index i は
+        // modified_data の index (6 + i) に対応する。
+        // IFDエントリ構造: タグ(2) + 型(2) + カウント(4) + 値/オフセット(4)
+        // 値フィールドは エントリ先頭から 8バイト後ろ → modified_data[(6 + i + 8)..]
         let mut found = false;
         for i in 0..tiff_data.len().saturating_sub(12) {
             if tiff_data[i..i + 2] == orientation_bytes {
-                // Orientationタグ発見
-                // 値フィールドの位置は タグ(2) + 型(2) + カウント(4) = 8バイト後
+                // IFDエントリの型フィールド（タグの直後2バイト）を確認して誤検知を除外する
+                // SHORT型 = 0x0003
+                let type_offset = i + 2;
+                if type_offset + 2 > tiff_data.len() {
+                    continue;
+                }
+                let entry_type = if is_little_endian {
+                    u16::from_le_bytes([tiff_data[type_offset], tiff_data[type_offset + 1]])
+                } else {
+                    u16::from_be_bytes([tiff_data[type_offset], tiff_data[type_offset + 1]])
+                };
+                // Orientation は SHORT型 (3) でなければ誤検知
+                if entry_type != 3 {
+                    continue;
+                }
+
+                // 値フィールドの位置: modified_data 上の絶対オフセット
+                // = EXIFヘッダー(6) + tiff_data内のエントリ先頭(i) + タグ(2) + 型(2) + カウント(4)
                 let value_offset = 6 + i + 8;
 
                 if value_offset + 2 <= modified_data.len() {
-                    // 値を1に設定（SHORT型なので2バイト）
+                    // 値を1（Normal）に設定（SHORT型なので2バイト）
                     if is_little_endian {
                         modified_data[value_offset] = 1;
                         modified_data[value_offset + 1] = 0;

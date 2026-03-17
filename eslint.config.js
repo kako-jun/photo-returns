@@ -31,12 +31,14 @@ export default [
         KeyboardEvent: 'readonly',
         HTMLElement: 'readonly',
         HTMLSelectElement: 'readonly',
+        HTMLAnchorElement: 'readonly',
+        HTMLButtonElement: 'readonly',
         React: 'readonly',
       },
     },
     plugins: {
       '@typescript-eslint': tsPlugin,
-      react: reactPlugin,
+      'react': reactPlugin,
       'react-hooks': reactHooksPlugin,
     },
     rules: {
