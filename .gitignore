@@ -28,3 +28,8 @@ nul
 .serena/
 .claude/settings.local.json
 .mcp.json
+
+# Security & build
+.env
+build/
+*.sqlite
