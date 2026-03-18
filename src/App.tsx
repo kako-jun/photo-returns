@@ -264,15 +264,13 @@ function App() {
     setProcessResult(null);
 
     try {
-      const result = await invoke<ProcessResult>('process_media', {
-        inputDir,
+      const result = await invoke<ProcessResult>('process_media_with_settings', {
+        mediaList,
         outputDir,
         backupDir: null,
-        includeVideos: true,
         parallel: true,
-        timezoneOffset: null,
+        includeVideos: true,
         cleanupTemp: true,
-        autoCorrectOrientation: true,
       });
 
       setProcessResult(result);

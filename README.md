@@ -10,8 +10,8 @@ PhotoReturns は、EXIFメタデータに基づいて写真や動画を整理・
 - **EXIF ベースのリネーム** - 撮影日時メタデータを使って自動的にファイルをリネーム
 - **ディレクトリ階層** - `YYYY/YYYYMM/YYYYMMDD` 構造でファイルを整理
 - **マルチフォーマット対応**
-  - 画像10形式: JPG, PNG, GIF, BMP, HEIC, HEIF, WebP, TIFF
-  - 動画11形式: MP4, MOV, AVI, MKV, WMV, FLV, WebM, M4V, 3GP, MPG, MPEG
+  - 画像8形式: JPG, PNG, GIF, BMP, WebP, TIFF
+  - 動画4形式: MP4, MOV, M4V, WebM
 - **複数の日付ソース** - EXIF、ファイル名、作成日時、更新日時から選択可能
 - **タイムゾーン調整** - 写真と動画で個別にタイムゾーンを設定可能
 

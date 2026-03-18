@@ -23,7 +23,7 @@ fn scan_media(
     photo_core::scan_media(&path, &options).map_err(|e| e.to_string())
 }
 
-/// メディアファイルをリネームして出力ディレクトリに整理
+/// メディアファイルをリネームして出力ディレクトリに整理（再スキャンあり版、後方互換用）
 #[tauri::command]
 fn process_media(
     input_dir: String,
@@ -49,6 +49,33 @@ fn process_media(
     };
 
     photo_core::process_media(&input_path, &output_path, &options).map_err(|e| e.to_string())
+}
+
+/// 事前スキャン済みメディアリストを使って処理（UIの設定を尊重）
+#[tauri::command]
+fn process_media_with_settings(
+    media_list: Vec<MediaInfo>,
+    output_dir: String,
+    backup_dir: Option<String>,
+    parallel: bool,
+    include_videos: bool,
+    cleanup_temp: bool,
+) -> Result<ProcessResult, String> {
+    let output_path = PathBuf::from(output_dir);
+    let backup_path = backup_dir.map(PathBuf::from);
+
+    let options = ProcessOptions {
+        parallel,
+        include_videos,
+        backup_dir: backup_path,
+        timezone_offset: None,
+        cleanup_temp,
+        auto_correct_orientation: false, // rotation_mode は各 MediaInfo に含まれる
+    };
+
+    let mut media = media_list;
+    photo_core::process_media_with_list(&mut media, &output_path, &options)
+        .map_err(|e| e.to_string())
 }
 
 /// ファイルをファイラーで開く（ファイルを選択した状態）
@@ -140,6 +167,7 @@ pub fn run() {
             greet,
             scan_media,
             process_media,
+            process_media_with_settings,
             reveal_in_filemanager
         ])
         .run(tauri::generate_context!())

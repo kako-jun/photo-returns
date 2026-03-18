@@ -146,19 +146,19 @@ impl MediaInfo {
 }
 
 /// 画像拡張子のチェック
+/// Note: HEIC/HEIF は kamadak-exif / image crate が未対応のため除外
 fn is_image_file(extension: &str) -> bool {
     matches!(
         extension,
-        "jpg" | "jpeg" | "png" | "gif" | "bmp" | "heic" | "heif" | "webp" | "tiff" | "tif"
+        "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp" | "tiff" | "tif"
     )
 }
 
 /// 動画拡張子のチェック
+/// Note: mp4 crate は MP4/MOV/M4V (QuickTime系) のみ対応。
+/// AVI/MKV/WMV/FLV/3GP/MPG/MPEG はメタデータ抽出できないため除外
 fn is_video_file(extension: &str) -> bool {
-    matches!(
-        extension,
-        "mp4" | "mov" | "avi" | "mkv" | "m4v" | "3gp" | "wmv" | "flv" | "webm" | "mpeg" | "mpg"
-    )
+    matches!(extension, "mp4" | "mov" | "m4v" | "webm")
 }
 
 /// EXIF情報の詳細
@@ -493,15 +493,20 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
                 (None, DateSource::None, None)
             };
 
-            if let Some(date) = date_taken {
-                let new_name = format_filename(&date, subsec, &extension);
+            {
+                let new_name = if let Some(date) = date_taken {
+                    format_filename(&date, subsec, &extension)
+                } else {
+                    // 日付なし: 元のファイル名をそのまま使用（unsortedフォルダへ）
+                    filename.to_string()
+                };
                 let file_size = fs::metadata(path).ok().map(|m| m.len()).unwrap_or(0);
 
                 let info = MediaInfo {
                     original_path: path.to_path_buf(),
                     file_name: path.file_name().unwrap().to_string_lossy().to_string(),
                     media_type: mtype,
-                    date_taken: Some(date),
+                    date_taken,
                     subsec_time: subsec,
                     // タイムゾーンはEXIFデータがある画像のみ（動画のQuickTimeはUTC固定のためNone）
                     timezone: if date_source == DateSource::Exif {
@@ -618,13 +623,39 @@ fn create_backup(original_path: &Path, backup_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// メディアファイルをリネームして階層構造にコピー
+/// "unsorted" ディレクトリを作成して返す
+fn create_unsorted_dir(output_dir: &Path) -> Result<PathBuf> {
+    let unsorted_dir = output_dir.join("unsorted");
+    fs::create_dir_all(&unsorted_dir)?;
+    Ok(unsorted_dir)
+}
+
+/// 事前スキャン済みのメディアリストを使って処理する
+/// フロントエンドでユーザーが設定した date_source / timezone_offset / rotation_mode を尊重する
+pub fn process_media_with_list(
+    media: &mut Vec<MediaInfo>,
+    output_dir: &Path,
+    options: &ProcessOptions,
+) -> Result<ProcessResult> {
+    process_media_inner(media, output_dir, options)
+}
+
+/// メディアファイルをリネームして階層構造にコピー（再スキャンあり版、CLI用）
 pub fn process_media(
     input_dir: &Path,
     output_dir: &Path,
     options: &ProcessOptions,
 ) -> Result<ProcessResult> {
     let mut media = scan_media(input_dir, options)?;
+    process_media_inner(&mut media, output_dir, options)
+}
+
+/// メディアファイルをリネームして階層構造にコピー（内部実装）
+fn process_media_inner(
+    media: &mut Vec<MediaInfo>,
+    output_dir: &Path,
+    options: &ProcessOptions,
+) -> Result<ProcessResult> {
     let total_files = media.len();
 
     let errors = Arc::new(Mutex::new(Vec::new()));
@@ -635,7 +666,7 @@ pub fn process_media(
     let file_slot_lock = Arc::new(Mutex::new(()));
 
     let processor = |item: &mut MediaInfo| {
-        if let Some(date) = item.date_taken {
+        {
             item.add_log(
                 LogLevel::Info,
                 format!("Processing started: {}", item.file_name),
@@ -653,24 +684,45 @@ pub fn process_media(
                 }
             }
 
-            // 出力ディレクトリ作成
-            let target_dir = match create_date_hierarchy(output_dir, &date) {
-                Ok(dir) => {
-                    item.add_log(
-                        LogLevel::Info,
-                        format!("Created directory: {}", dir.display()),
-                    );
-                    dir
+            // 出力ディレクトリ作成（日付があれば階層構造、なければunsorted）
+            let target_dir = if let Some(date) = item.date_taken {
+                match create_date_hierarchy(output_dir, &date) {
+                    Ok(dir) => {
+                        item.add_log(
+                            LogLevel::Info,
+                            format!("Created directory: {}", dir.display()),
+                        );
+                        dir
+                    }
+                    Err(e) => {
+                        let msg = format!(
+                            "Failed to create directory for {}: {}",
+                            item.original_path.display(),
+                            e
+                        );
+                        item.add_log(LogLevel::Error, &msg);
+                        errors.lock().unwrap().push(msg);
+                        return;
+                    }
                 }
-                Err(e) => {
-                    let msg = format!(
-                        "Failed to create directory for {}: {}",
-                        item.original_path.display(),
-                        e
-                    );
-                    item.add_log(LogLevel::Error, &msg);
-                    errors.lock().unwrap().push(msg);
-                    return;
+            } else {
+                // 日付なし → unsortedフォルダへ
+                item.add_log(
+                    LogLevel::Warning,
+                    "No date information found, moving to unsorted folder",
+                );
+                match create_unsorted_dir(output_dir) {
+                    Ok(dir) => dir,
+                    Err(e) => {
+                        let msg = format!(
+                            "Failed to create unsorted directory for {}: {}",
+                            item.original_path.display(),
+                            e
+                        );
+                        item.add_log(LogLevel::Error, &msg);
+                        errors.lock().unwrap().push(msg);
+                        return;
+                    }
                 }
             };
 
@@ -690,10 +742,19 @@ pub fn process_media(
                         .and_then(|e| e.to_str())
                         .unwrap_or("");
 
-                    let base_name = if let Some(ms) = item.subsec_time {
-                        format!("{}-{:03}", date.format("%Y-%m-%d_%H-%M-%S"), ms)
+                    let base_name = if let Some(date) = item.date_taken {
+                        if let Some(ms) = item.subsec_time {
+                            format!("{}-{:03}", date.format("%Y-%m-%d_%H-%M-%S"), ms)
+                        } else {
+                            date.format("%Y-%m-%d_%H-%M-%S").to_string()
+                        }
                     } else {
-                        date.format("%Y-%m-%d_%H-%M-%S").to_string()
+                        // 日付なし: 元のファイル名のステム部分を使う
+                        item.original_path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("unknown")
+                            .to_string()
                     };
 
                     candidate = target_dir.join(format!("{base_name}_{counter:02}.{extension}"));
@@ -838,7 +899,7 @@ pub fn process_media(
         success: processed_files > 0,
         total_files,
         processed_files,
-        media,
+        media: media.clone(),
         errors: errors_vec,
     })
 }
