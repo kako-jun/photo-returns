@@ -18,10 +18,10 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://asset.localhost data:; media-src 'self' asset: https://asset.localhost",
       "assetProtocol": {
         "enable": true,
-        "scope": ["**"]
+        "scope": ["$HOME/Pictures/**", "$HOME/Desktop/**", "$HOME/Downloads/**", "$HOME/Documents/**"]
       }
     }
   },
