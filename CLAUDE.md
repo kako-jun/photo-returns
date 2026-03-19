@@ -44,6 +44,12 @@ cd src-tauri && cargo test  # Rust tests
 - ESLint 9.x uses flat config (`eslint.config.js`)
 - All auto-features (burst, rotation, parallel) are enabled by default
 
+## CI/CD
+
+- **CI**: `.github/workflows/ci.yml` — push/PR to main triggers `cargo fmt --check` / `cargo clippy` / `cargo check` + `npm run build`
+- **Release**: `.github/workflows/release.yml` — manual dispatch or tag `v*`, 3-OS matrix (macOS/Linux/Windows), tauri-action, draft release
+- **Pre-commit**: Husky + lint-staged (`eslint --fix` + `prettier` for TS/JS, `prettier` for JSON/CSS/MD) + `cargo fmt`
+
 ## Design Decisions
 
 - Errors don't halt processing; retry failed files individually

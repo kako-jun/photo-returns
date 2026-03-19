@@ -1,9 +1,9 @@
-name: Release Build
+name: Release
 
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*'
   workflow_dispatch:
     inputs:
       version:
@@ -20,14 +20,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest'
+          - platform: macos-latest
             args: '--target universal-apple-darwin'
-          - platform: 'ubuntu-22.04'
+          - platform: ubuntu-latest
             args: ''
-          - platform: 'windows-latest'
+          - platform: windows-latest
             args: ''
 
     runs-on: ${{ matrix.platform }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -47,26 +48,21 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
-      - name: Install dependencies (Ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
+      - name: Install system dependencies (Ubuntu only)
+        if: matrix.platform == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev
 
       - name: Install frontend dependencies
         run: npm ci
-
-      - name: Run frontend linting
-        run: npm run lint
-
-      - name: Run frontend format check
-        run: npm run format:check
-
-      - name: Run Rust format check
-        run: npm run format:rust:check
-
-      - name: Run Rust linting
-        run: npm run lint:rust || true
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -89,6 +85,6 @@ jobs:
             ## Notes
             - macOS: You may need to right-click and select "Open" the first time due to Gatekeeper
             - Linux: You may need to install system dependencies (libwebkit2gtk-4.1)
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
