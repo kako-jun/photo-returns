@@ -774,9 +774,7 @@ fn process_media_inner(
                 // ロック保持中にコピーしてスロットを確保する
                 fs::copy(&item.original_path, &candidate)
                     .map(|_| candidate)
-                    .map_err(|e| {
-                        format!("Failed to copy {}: {}", item.original_path.display(), e)
-                    })
+                    .map_err(|e| format!("Failed to copy {}: {}", item.original_path.display(), e))
                 // ロック解放
             };
 
@@ -837,16 +835,14 @@ fn process_media_inner(
                                                 );
                                                 item.rotation_applied = true;
 
-                                                if let Err(e) =
-                                                    orientation::reset_exif_orientation(
-                                                        &target_path,
-                                                    )
-                                                {
+                                                if let Err(e) = orientation::reset_exif_orientation(
+                                                    &target_path,
+                                                ) {
                                                     item.add_log(
                                                         LogLevel::Warning,
                                                         format!(
-                                                        "Failed to reset EXIF orientation: {e}"
-                                                    ),
+                                                            "Failed to reset EXIF orientation: {e}"
+                                                        ),
                                                     );
                                                 } else {
                                                     item.add_log(
