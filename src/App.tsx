@@ -12,19 +12,20 @@ import { MOCK_ENABLED, mockMediaList, mockProcessResult } from './mock-data';
 import type { MediaInfo, ProcessResult } from './types';
 import { MainLayout } from './components/MainLayout';
 import { useMediaTableColumns } from './hooks/useMediaTableColumns';
+import { getStorageValue, saveStorage } from './storage';
 
 function App() {
   const [isDark, setIsDark] = useState(() => {
     // ローカルストレージから読み込む（デフォルトはライトモード）
-    return localStorage.getItem('theme') === 'dark';
+    return getStorageValue('theme') === 'dark';
   });
   const [inputDir, setInputDir] = useState<string>(() => {
     if (MOCK_ENABLED) return 'C:\\Photos';
-    return localStorage.getItem('inputDir') || '';
+    return getStorageValue('inputDir') || '';
   });
   const [outputDir, setOutputDir] = useState<string>(() => {
     if (MOCK_ENABLED) return 'C:\\Output';
-    return localStorage.getItem('outputDir') || '';
+    return getStorageValue('outputDir') || '';
   });
   const [mediaList, setMediaList] = useState<MediaInfo[]>(MOCK_ENABLED ? mockMediaList : []);
   const [isScanning, setIsScanning] = useState(false);
@@ -69,10 +70,10 @@ function App() {
   useEffect(() => {
     if (isDark) {
       document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
+      saveStorage({ theme: 'dark' });
     } else {
       document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
+      saveStorage({ theme: 'light' });
     }
   }, [isDark]);
 
@@ -131,7 +132,7 @@ function App() {
     if (selected) {
       const path = selected as string;
       setInputDir(path);
-      localStorage.setItem('inputDir', path);
+      saveStorage({ inputDir: path });
     }
   };
 
@@ -144,7 +145,7 @@ function App() {
     if (selected) {
       const path = selected as string;
       setOutputDir(path);
-      localStorage.setItem('outputDir', path);
+      saveStorage({ outputDir: path });
     }
   };
 
