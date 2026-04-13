@@ -70,3 +70,8 @@ cd src-tauri && cargo test  # Rust tests
 ## Detailed Documentation
 
 See `docs/development.md` for full implementation history, code structure details, and test checklists.
+
+
+## デザインシステム
+
+UIの生成・修正時は `DESIGN.md` に定義されたデザインシステムに従うこと。定義外の色・フォント・スペーシングを勝手に使わない。
