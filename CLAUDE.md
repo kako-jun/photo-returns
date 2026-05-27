@@ -70,3 +70,8 @@ cd src-tauri && cargo test  # Rust tests
 ## Detailed Documentation
 
 See `docs/development.md` for full implementation history, code structure details, and test checklists.
+
+## Design System
+
+When changing UI, follow `DESIGN.md`. Do not introduce unrelated colors, fonts,
+spacing, or rounded card-heavy styling outside the project design system.
