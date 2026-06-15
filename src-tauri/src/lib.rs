@@ -24,6 +24,8 @@ fn scan_media(
 }
 
 /// メディアファイルをリネームして出力ディレクトリに整理（再スキャンあり版、後方互換用）
+// Tauri コマンドの公開引数がそのまま並ぶため引数が多い。API 互換のため統合せず lint のみ抑止する。
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 fn process_media(
     input_dir: String,
