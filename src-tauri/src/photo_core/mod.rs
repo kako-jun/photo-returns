@@ -93,12 +93,24 @@ pub struct LogEntry {
     pub message: String,
 }
 
-/// メディアファイル情報
+/// 不変な入力メタデータ（スキャン時に確定し、以後変化しない）
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MediaInfo {
+pub struct MediaSource {
     pub original_path: PathBuf,
     pub file_name: String,
     pub media_type: MediaType,
+    pub file_size: u64,
+    /// EXIF orientation値（1-8、Noneは回転なし）
+    pub exif_orientation: Option<u32>,
+    /// 画像の幅（ピクセル）
+    pub width: Option<u32>,
+    /// 画像の高さ（ピクセル）
+    pub height: Option<u32>,
+}
+
+/// 日付候補（複数ソースから派生。ユーザー選択用に全候補を保持）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DateCandidates {
     pub date_taken: Option<DateTime<Local>>,
     pub subsec_time: Option<u32>, // ミリ秒（0-999）
     pub timezone: Option<String>, // タイムゾーンオフセット（例："+09:00", null=TZ情報なし）
@@ -107,28 +119,51 @@ pub struct MediaInfo {
     pub filename_date: Option<DateTime<Local>>,
     pub file_created_date: Option<DateTime<Local>>,
     pub file_modified_date: Option<DateTime<Local>>,
+    /// 日付の取得元
+    pub date_source: DateSource,
+}
+
+/// 処理によって埋まる派生出力（リネーム・コピー・回転・バースト）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DerivedOutput {
     pub new_name: String,
     pub new_path: PathBuf,
-    pub file_size: u64,
+    /// 画像回転が適用されたか
+    pub rotation_applied: bool,
     /// バーストグループID（連続撮影グループ）
     pub burst_group_id: Option<usize>,
     /// バーストグループ内のインデックス（1始まり）
     pub burst_index: Option<usize>,
-    /// 日付の取得元
-    pub date_source: DateSource,
-    /// EXIF orientation値（1-8、Noneは回転なし）
-    pub exif_orientation: Option<u32>,
-    /// 画像回転が適用されたか
-    pub rotation_applied: bool,
+}
+
+/// ユーザー選択（フロントエンドで設定）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserOverrides {
     /// ユーザー選択：TZオフセット補正（例："+09:00", "none", "exif"）
     pub timezone_offset: Option<String>,
     /// ユーザー選択：回転方法（"none", "exif", "90", "180", "270"）
     pub rotation_mode: Option<String>,
-    /// 画像の幅（ピクセル）
-    pub width: Option<u32>,
-    /// 画像の高さ（ピクセル）
-    pub height: Option<u32>,
-    /// 処理ログ
+}
+
+/// メディアファイル情報
+///
+/// 内部は責務ごとにサブ構造体へ分離しているが、`#[serde(flatten)]` により
+/// JSON 表現は flat なまま（フロントエンドの `types.ts` の契約を維持）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaInfo {
+    /// 不変入力メタ
+    #[serde(flatten)]
+    pub source: MediaSource,
+    /// 日付候補（派生）
+    #[serde(flatten)]
+    pub dates: DateCandidates,
+    /// 処理で埋まる派生出力
+    #[serde(flatten)]
+    pub derived: DerivedOutput,
+    /// ユーザー選択
+    #[serde(flatten)]
+    pub overrides: UserOverrides,
+    /// 処理ログ（実行時に追記される）
     pub logs: Vec<LogEntry>,
 }
 
@@ -247,34 +282,42 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
                 let file_size = fs::metadata(path).ok().map(|m| m.len()).unwrap_or(0);
 
                 let info = MediaInfo {
-                    original_path: path.to_path_buf(),
-                    file_name: path.file_name().unwrap().to_string_lossy().to_string(),
-                    media_type: mtype,
-                    date_taken,
-                    subsec_time: subsec,
-                    // タイムゾーンはEXIFデータがある画像のみ（動画のQuickTimeはUTC固定のためNone）
-                    timezone: if date_source == DateSource::Exif {
-                        exif_info.timezone.clone()
-                    } else {
-                        None
+                    source: MediaSource {
+                        original_path: path.to_path_buf(),
+                        file_name: path.file_name().unwrap().to_string_lossy().to_string(),
+                        media_type: mtype,
+                        file_size,
+                        exif_orientation: exif_info.orientation,
+                        width: video_meta.as_ref().map(|v| v.width).or(exif_info.width),
+                        height: video_meta.as_ref().map(|v| v.height).or(exif_info.height),
                     },
-                    // 各候補の日付を保存
-                    exif_date,
-                    filename_date,
-                    file_created_date,
-                    file_modified_date,
-                    new_name,
-                    new_path: PathBuf::new(),
-                    file_size,
-                    burst_group_id: None,
-                    burst_index: None,
-                    date_source,
-                    exif_orientation: exif_info.orientation,
-                    rotation_applied: false, // スキャン時はまだ回転していない
-                    timezone_offset: None,   // ユーザー未選択（フロントエンドで設定）
-                    rotation_mode: None,     // ユーザー未選択（フロントエンドで設定）
-                    width: video_meta.as_ref().map(|v| v.width).or(exif_info.width),
-                    height: video_meta.as_ref().map(|v| v.height).or(exif_info.height),
+                    dates: DateCandidates {
+                        date_taken,
+                        subsec_time: subsec,
+                        // タイムゾーンはEXIFデータがある画像のみ（動画のQuickTimeはUTC固定のためNone）
+                        timezone: if date_source == DateSource::Exif {
+                            exif_info.timezone.clone()
+                        } else {
+                            None
+                        },
+                        // 各候補の日付を保存
+                        exif_date,
+                        filename_date,
+                        file_created_date,
+                        file_modified_date,
+                        date_source,
+                    },
+                    derived: DerivedOutput {
+                        new_name,
+                        new_path: PathBuf::new(),
+                        rotation_applied: false, // スキャン時はまだ回転していない
+                        burst_group_id: None,
+                        burst_index: None,
+                    },
+                    overrides: UserOverrides {
+                        timezone_offset: None, // ユーザー未選択（フロントエンドで設定）
+                        rotation_mode: None,   // ユーザー未選択（フロントエンドで設定）
+                    },
                     logs: Vec::new(), // ログは空で初期化
                 };
 
@@ -295,15 +338,15 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
 
     // 並列処理後は順序が不定のため、撮影日時でソートしてからバースト検出を行う
     // date_taken が None のファイルは末尾に移動する
-    result.sort_by(|a, b| match (a.date_taken, b.date_taken) {
+    result.sort_by(|a, b| match (a.dates.date_taken, b.dates.date_taken) {
         (Some(da), Some(db)) => da.cmp(&db),
         (Some(_), None) => std::cmp::Ordering::Less,
         (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => a.file_name.cmp(&b.file_name),
+        (None, None) => a.source.file_name.cmp(&b.source.file_name),
     });
 
     // バースト検出を実行
-    let dates: Vec<Option<DateTime<Local>>> = result.iter().map(|m| m.date_taken).collect();
+    let dates: Vec<Option<DateTime<Local>>> = result.iter().map(|m| m.dates.date_taken).collect();
     let burst_config = BurstDetectorConfig::default();
     let burst_groups = detect_burst_groups(&dates, &burst_config);
 
@@ -311,25 +354,27 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
     for group in &burst_groups {
         for (idx, &photo_idx) in group.photo_indices.iter().enumerate() {
             if let Some(media_info) = result.get_mut(photo_idx) {
-                media_info.burst_group_id = Some(group.id);
-                media_info.burst_index = Some(idx + 1); // 1始まり
+                media_info.derived.burst_group_id = Some(group.id);
+                media_info.derived.burst_index = Some(idx + 1); // 1始まり
 
                 // ファイル名に連番を追加
-                if let Some(date) = media_info.date_taken {
+                if let Some(date) = media_info.dates.date_taken {
                     let extension = media_info
+                        .source
                         .original_path
                         .extension()
                         .and_then(|e| e.to_str())
                         .unwrap_or("jpg");
 
                     // ベースファイル名を生成（拡張子なし）
-                    let base_name = if let Some(ms) = media_info.subsec_time {
+                    let base_name = if let Some(ms) = media_info.dates.subsec_time {
                         format!("{}-{:03}", date.format("%Y-%m-%d_%H-%M-%S"), ms)
                     } else {
                         date.format("%Y-%m-%d_%H-%M-%S").to_string()
                     };
 
-                    media_info.new_name = format!("{}_{:02}.{}", base_name, idx + 1, extension);
+                    media_info.derived.new_name =
+                        format!("{}_{:02}.{}", base_name, idx + 1, extension);
                 }
             }
         }
@@ -377,13 +422,17 @@ fn process_media_inner(
         {
             item.add_log(
                 LogLevel::Info,
-                format!("Processing started: {}", item.file_name),
+                format!("Processing started: {}", item.source.file_name),
             );
 
             // バックアップ作成
             if let Some(ref backup_dir) = options.backup_dir {
-                if let Err(e) = create_backup(&item.original_path, backup_dir) {
-                    let msg = format!("Failed to backup {}: {}", item.original_path.display(), e);
+                if let Err(e) = create_backup(&item.source.original_path, backup_dir) {
+                    let msg = format!(
+                        "Failed to backup {}: {}",
+                        item.source.original_path.display(),
+                        e
+                    );
                     item.add_log(LogLevel::Error, &msg);
                     errors.lock().unwrap().push(msg);
                     return;
@@ -393,7 +442,7 @@ fn process_media_inner(
             }
 
             // 出力ディレクトリ作成（日付があれば階層構造、なければunsorted）
-            let target_dir = if let Some(date) = item.date_taken {
+            let target_dir = if let Some(date) = item.dates.date_taken {
                 match create_date_hierarchy(output_dir, &date) {
                     Ok(dir) => {
                         item.add_log(
@@ -405,7 +454,7 @@ fn process_media_inner(
                     Err(e) => {
                         let msg = format!(
                             "Failed to create directory for {}: {}",
-                            item.original_path.display(),
+                            item.source.original_path.display(),
                             e
                         );
                         item.add_log(LogLevel::Error, &msg);
@@ -424,7 +473,7 @@ fn process_media_inner(
                     Err(e) => {
                         let msg = format!(
                             "Failed to create unsorted directory for {}: {}",
-                            item.original_path.display(),
+                            item.source.original_path.display(),
                             e
                         );
                         item.add_log(LogLevel::Error, &msg);
@@ -440,25 +489,27 @@ fn process_media_inner(
             let copy_result: Result<PathBuf, String> = {
                 let _guard = file_slot_lock.lock().unwrap();
 
-                let mut candidate = target_dir.join(&item.new_name);
+                let mut candidate = target_dir.join(&item.derived.new_name);
                 let mut counter = 1u32;
 
                 while candidate.exists() {
                     let extension = item
+                        .source
                         .original_path
                         .extension()
                         .and_then(|e| e.to_str())
                         .unwrap_or("");
 
-                    let base_name = if let Some(date) = item.date_taken {
-                        if let Some(ms) = item.subsec_time {
+                    let base_name = if let Some(date) = item.dates.date_taken {
+                        if let Some(ms) = item.dates.subsec_time {
                             format!("{}-{:03}", date.format("%Y-%m-%d_%H-%M-%S"), ms)
                         } else {
                             date.format("%Y-%m-%d_%H-%M-%S").to_string()
                         }
                     } else {
                         // 日付なし: 元のファイル名のステム部分を使う
-                        item.original_path
+                        item.source
+                            .original_path
                             .file_stem()
                             .and_then(|s| s.to_str())
                             .unwrap_or("unknown")
@@ -480,29 +531,36 @@ fn process_media_inner(
                 }
 
                 // ロック保持中にコピーしてスロットを確保する
-                fs::copy(&item.original_path, &candidate)
+                fs::copy(&item.source.original_path, &candidate)
                     .map(|_| candidate)
-                    .map_err(|e| format!("Failed to copy {}: {}", item.original_path.display(), e))
+                    .map_err(|e| {
+                        format!(
+                            "Failed to copy {}: {}",
+                            item.source.original_path.display(),
+                            e
+                        )
+                    })
                 // ロック解放
             };
 
             match copy_result {
                 Ok(target_path) => {
-                    item.new_path = target_path.clone();
+                    item.derived.new_path = target_path.clone();
                     item.add_log(
                         LogLevel::Info,
                         format!("File copied successfully to: {}", target_path.display()),
                     );
 
                     // 画像回転処理（rotation_modeに基づく）
-                    if item.media_type == MediaType::Photo {
-                        let rotation_mode = item.rotation_mode.as_deref().unwrap_or("none");
+                    if item.source.media_type == MediaType::Photo {
+                        let rotation_mode =
+                            item.overrides.rotation_mode.as_deref().unwrap_or("none");
 
                         if rotation_mode != "none" {
                             // 回転角度を計算
                             let degrees = match rotation_mode {
                                 "exif" => {
-                                    if let Some(ori) = item.exif_orientation {
+                                    if let Some(ori) = item.source.exif_orientation {
                                         match ori {
                                             1 => 0,
                                             3 => 180,
@@ -541,7 +599,7 @@ fn process_media_inner(
                                                     LogLevel::Info,
                                                     "Image rotated and saved successfully",
                                                 );
-                                                item.rotation_applied = true;
+                                                item.derived.rotation_applied = true;
 
                                                 if let Err(e) = orientation::reset_exif_orientation(
                                                     &target_path,
@@ -606,4 +664,95 @@ fn process_media_inner(
         media: media.clone(),
         errors: errors_vec,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    /// フロントエンド契約の機械検証:
+    /// MediaInfo はサブ構造体に分割したが `#[serde(flatten)]` により
+    /// JSON は flat な 23 キーのまま（`src/types.ts` の `interface MediaInfo`）。
+    /// このテストが落ちたらフロントが壊れるサイン。
+    #[test]
+    fn mediainfo_wire_format_is_flat_23_keys() {
+        let info = MediaInfo {
+            source: MediaSource {
+                original_path: PathBuf::from("/tmp/in.jpg"),
+                file_name: "in.jpg".to_string(),
+                media_type: MediaType::Photo,
+                file_size: 123,
+                exif_orientation: Some(1),
+                width: Some(640),
+                height: Some(480),
+            },
+            dates: DateCandidates {
+                date_taken: None,
+                subsec_time: Some(42),
+                timezone: Some("+09:00".to_string()),
+                exif_date: None,
+                filename_date: None,
+                file_created_date: None,
+                file_modified_date: None,
+                date_source: DateSource::Exif,
+            },
+            derived: DerivedOutput {
+                new_name: "out.jpg".to_string(),
+                new_path: PathBuf::from("/tmp/out.jpg"),
+                rotation_applied: false,
+                burst_group_id: None,
+                burst_index: None,
+            },
+            overrides: UserOverrides {
+                timezone_offset: None,
+                rotation_mode: None,
+            },
+            logs: Vec::new(),
+        };
+
+        let value = serde_json::to_value(&info).expect("serialize MediaInfo");
+        let obj = value
+            .as_object()
+            .expect("MediaInfo must serialize to a JSON object");
+
+        let actual: BTreeSet<&str> = obj.keys().map(|k| k.as_str()).collect();
+        let expected: BTreeSet<&str> = [
+            "original_path",
+            "file_name",
+            "media_type",
+            "date_taken",
+            "subsec_time",
+            "timezone",
+            "exif_date",
+            "filename_date",
+            "file_created_date",
+            "file_modified_date",
+            "new_name",
+            "new_path",
+            "file_size",
+            "burst_group_id",
+            "burst_index",
+            "date_source",
+            "exif_orientation",
+            "rotation_applied",
+            "timezone_offset",
+            "rotation_mode",
+            "width",
+            "height",
+            "logs",
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(
+            actual, expected,
+            "MediaInfo の top-level JSON キーがフロント契約（23キー flat）と一致しません"
+        );
+        assert_eq!(
+            actual.len(),
+            23,
+            "MediaInfo の top-level キーは 23 個のはず"
+        );
+    }
 }
