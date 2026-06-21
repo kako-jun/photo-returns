@@ -1,7 +1,7 @@
 /// 写真・動画リネームのコア機能
 /// y4m2d2の完全移植版
 use anyhow::Result;
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Duration, Local, TimeZone};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -383,6 +383,85 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
     Ok(result)
 }
 
+/// タイムゾーン補正の基準オフセット（秒）。
+/// docs/development.md「日本時間（UTC+9）基準で補正」に基づき JST を正本とする。
+const JST_OFFSET_SECONDS: i64 = 9 * 3600;
+
+/// "+09:00" / "-05:30" 形式のオフセット文字列を秒に変換する。形式不正は None。
+fn parse_offset_seconds(s: &str) -> Option<i64> {
+    let bytes = s.as_bytes();
+    if bytes.len() != 6 || bytes[3] != b':' {
+        return None;
+    }
+    let sign = match bytes[0] {
+        b'+' => 1,
+        b'-' => -1,
+        _ => return None,
+    };
+    let hh: i64 = s.get(1..3)?.parse().ok()?;
+    let mm: i64 = s.get(4..6)?.parse().ok()?;
+    if hh > 23 || mm > 59 {
+        return None;
+    }
+    Some(sign * (hh * 3600 + mm * 60))
+}
+
+/// ユーザー選択の `overrides.timezone_offset` に従い、撮影日時を JST(UTC+9) 基準へ補正する。
+///
+/// - `None` / `"none"` → 補正しない
+/// - `"exif"` → EXIF 埋め込みの TZ（`dates.timezone`）を元オフセットとみなす。不明なら補正しない
+/// - `"+HH:MM"` / `"-HH:MM"` → その値を元オフセットとみなす。不正値なら補正しない
+///
+/// 補正量 = `JST_OFFSET_SECONDS - source_offset` を撮影日時の wall-clock に加算する。
+/// naive wall-clock 上で加算するためマシンのローカル TZ に依存しない。補正に伴い
+/// `derived.new_name` を作り直す。
+fn apply_timezone_correction(item: &mut MediaInfo) {
+    let Some(date) = item.dates.date_taken else {
+        return;
+    };
+    let source_offset = match item.overrides.timezone_offset.as_deref() {
+        None | Some("none") => return,
+        Some("exif") => match item
+            .dates
+            .timezone
+            .as_deref()
+            .and_then(parse_offset_seconds)
+        {
+            Some(off) => off,
+            None => return,
+        },
+        Some(other) => match parse_offset_seconds(other) {
+            Some(off) => off,
+            None => return,
+        },
+    };
+
+    let shift = JST_OFFSET_SECONDS - source_offset;
+    if shift == 0 {
+        return;
+    }
+
+    let corrected_naive = date.naive_local() + Duration::seconds(shift);
+    let Some(corrected) = Local.from_local_datetime(&corrected_naive).single() else {
+        return;
+    };
+
+    item.dates.date_taken = Some(corrected);
+    let extension = item
+        .source
+        .original_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    item.derived.new_name = format_filename(&corrected, item.dates.subsec_time, extension);
+    item.add_log(
+        LogLevel::Info,
+        format!(
+            "Timezone correction applied (source offset {source_offset}s -> JST, shift {shift}s)"
+        ),
+    );
+}
+
 /// 事前スキャン済みのメディアリストを使って処理する
 /// フロントエンドでユーザーが設定した date_source / timezone_offset / rotation_mode を尊重する
 pub fn process_media_with_list(
@@ -424,6 +503,10 @@ fn process_media_inner(
                 LogLevel::Info,
                 format!("Processing started: {}", item.source.file_name),
             );
+
+            // ユーザー選択のタイムゾーン補正を撮影日時へ適用してから
+            // 出力ディレクトリ階層・ファイル名を決定する（#5）。
+            apply_timezone_correction(item);
 
             // バックアップ作成
             if let Some(ref backup_dir) = options.backup_dir {
@@ -787,5 +870,155 @@ mod tests {
             actual, expected,
             "ProcessOptions の JSON キーが snake_case 契約と一致しません（rename_all を足すとフロント配線が壊れる）"
         );
+    }
+
+    fn local_dt(y: i32, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> DateTime<Local> {
+        Local.with_ymd_and_hms(y, mo, d, h, mi, s).single().unwrap()
+    }
+
+    /// タイムゾーン補正テスト用に最小の MediaInfo を組み立てる。
+    fn tz_item(
+        date: DateTime<Local>,
+        subsec: Option<u32>,
+        tz_override: Option<&str>,
+        exif_tz: Option<&str>,
+    ) -> MediaInfo {
+        MediaInfo {
+            source: MediaSource {
+                original_path: PathBuf::from("/in/IMG.jpg"),
+                file_name: "IMG.jpg".to_string(),
+                media_type: MediaType::Photo,
+                file_size: 0,
+                exif_orientation: None,
+                width: None,
+                height: None,
+            },
+            dates: DateCandidates {
+                date_taken: Some(date),
+                subsec_time: subsec,
+                timezone: exif_tz.map(|s| s.to_string()),
+                exif_date: None,
+                filename_date: None,
+                file_created_date: None,
+                file_modified_date: None,
+                date_source: DateSource::Exif,
+            },
+            derived: DerivedOutput {
+                new_name: format_filename(&date, subsec, "jpg"),
+                new_path: PathBuf::new(),
+                rotation_applied: false,
+                burst_group_id: None,
+                burst_index: None,
+            },
+            overrides: UserOverrides {
+                timezone_offset: tz_override.map(|s| s.to_string()),
+                rotation_mode: None,
+            },
+            logs: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn parse_offset_seconds_handles_valid_and_invalid() {
+        assert_eq!(parse_offset_seconds("+09:00"), Some(32400));
+        assert_eq!(parse_offset_seconds("+00:00"), Some(0));
+        assert_eq!(parse_offset_seconds("-05:30"), Some(-19800));
+        assert_eq!(parse_offset_seconds("+14:00"), Some(50400));
+        // 不正形式
+        assert_eq!(parse_offset_seconds("none"), None);
+        assert_eq!(parse_offset_seconds("0900"), None);
+        assert_eq!(parse_offset_seconds("+9:00"), None);
+        assert_eq!(parse_offset_seconds("+25:00"), None);
+        assert_eq!(parse_offset_seconds("+09:60"), None);
+    }
+
+    #[test]
+    fn tz_correction_utc_assumed_shifts_plus_9h() {
+        // +00:00 を選択＝UTC と仮定し JST へ補正（mock-data と一致）
+        let mut item = tz_item(local_dt(2024, 1, 1, 15, 0, 0), None, Some("+00:00"), None);
+        apply_timezone_correction(&mut item);
+        assert_eq!(
+            item.dates.date_taken.unwrap(),
+            local_dt(2024, 1, 2, 0, 0, 0)
+        );
+        assert_eq!(item.derived.new_name, "2024-01-02_00-00-00.jpg");
+    }
+
+    #[test]
+    fn tz_correction_jst_is_noop() {
+        // +09:00（既に JST）→ shift 0 で無補正、ファイル名も不変
+        let mut item = tz_item(local_dt(2024, 6, 1, 12, 30, 0), None, Some("+09:00"), None);
+        apply_timezone_correction(&mut item);
+        assert_eq!(
+            item.dates.date_taken.unwrap(),
+            local_dt(2024, 6, 1, 12, 30, 0)
+        );
+        assert_eq!(item.derived.new_name, "2024-06-01_12-30-00.jpg");
+    }
+
+    #[test]
+    fn tz_correction_none_and_unset_are_noop() {
+        for sel in [Some("none"), None] {
+            let mut item = tz_item(local_dt(2024, 1, 1, 10, 0, 0), None, sel, Some("+00:00"));
+            apply_timezone_correction(&mut item);
+            assert_eq!(
+                item.dates.date_taken.unwrap(),
+                local_dt(2024, 1, 1, 10, 0, 0)
+            );
+        }
+    }
+
+    #[test]
+    fn tz_correction_exif_uses_embedded_offset() {
+        // exif 選択＋EXIF TZ +00:00 → +9h
+        let mut item = tz_item(
+            local_dt(2024, 1, 1, 15, 0, 0),
+            None,
+            Some("exif"),
+            Some("+00:00"),
+        );
+        apply_timezone_correction(&mut item);
+        assert_eq!(
+            item.dates.date_taken.unwrap(),
+            local_dt(2024, 1, 2, 0, 0, 0)
+        );
+    }
+
+    #[test]
+    fn tz_correction_exif_without_embedded_tz_is_noop() {
+        let mut item = tz_item(local_dt(2024, 1, 1, 15, 0, 0), None, Some("exif"), None);
+        apply_timezone_correction(&mut item);
+        assert_eq!(
+            item.dates.date_taken.unwrap(),
+            local_dt(2024, 1, 1, 15, 0, 0)
+        );
+    }
+
+    #[test]
+    fn tz_correction_invalid_offset_is_noop() {
+        let mut item = tz_item(local_dt(2024, 1, 1, 15, 0, 0), None, Some("garbage"), None);
+        apply_timezone_correction(&mut item);
+        assert_eq!(
+            item.dates.date_taken.unwrap(),
+            local_dt(2024, 1, 1, 15, 0, 0)
+        );
+    }
+
+    #[test]
+    fn tz_correction_negative_offset_and_subsec_preserved() {
+        // -05:00 → shift = 32400 - (-18000) = 50400s = +14h
+        let mut item = tz_item(
+            local_dt(2024, 1, 1, 10, 0, 0),
+            Some(123),
+            Some("-05:00"),
+            None,
+        );
+        apply_timezone_correction(&mut item);
+        assert_eq!(
+            item.dates.date_taken.unwrap(),
+            local_dt(2024, 1, 2, 0, 0, 0)
+        );
+        // subsec はミリ秒なので TZ で動かず保持される
+        assert_eq!(item.derived.new_name, "2024-01-02_00-00-00-123.jpg");
     }
 }
