@@ -36,7 +36,8 @@ fn write_plain_jpeg(dir: &Path, name: &str, w: u32, h: u32) -> PathBuf {
     path
 }
 
-/// EXIF Orientation タグ（1エントリの最小 TIFF）を持つ JPEG フィクスチャを書き出す。
+/// EXIF を持つ JPEG フィクスチャを書き出す。IFD0 に Orientation と、保全検証用の
+/// ResolutionUnit(=2) の2エントリを入れる（回転後に Orientation 以外が残るかを確かめるため）。
 fn write_jpeg_with_orientation(
     dir: &Path,
     name: &str,
@@ -46,19 +47,31 @@ fn write_jpeg_with_orientation(
 ) -> PathBuf {
     let path = write_plain_jpeg(dir, name, w, h);
     let mut jpeg = Jpeg::from_bytes(std::fs::read(&path).unwrap().into()).unwrap();
-    let [vlo, vhi] = orientation.to_le_bytes();
+    let [olo, ohi] = orientation.to_le_bytes();
     let tiff: Vec<u8> = vec![
         0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00, // "II", 42, IFD0 offset = 8
-        0x01, 0x00, // エントリ数 1
-        0x12, 0x01, // タグ 0x0112 (Orientation) LE
-        0x03, 0x00, // 型 SHORT
-        0x01, 0x00, 0x00, 0x00, // カウント 1
-        vlo, vhi, 0x00, 0x00, // 値（インライン）
-        0x00, 0x00, 0x00, 0x00, // 次 IFD = 0
+        0x02, 0x00, // エントリ数 2
+        // Orientation (0x0112) SHORT count 1 = orientation
+        0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, olo, ohi, 0x00, 0x00,
+        // ResolutionUnit (0x0128) SHORT count 1 = 2（保全検証用の無害なタグ）
+        0x28, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, // 次 IFD = 0
     ];
     jpeg.set_exif(Some(Bytes::from(tiff)));
     std::fs::write(&path, jpeg.encoder().bytes()).unwrap();
     path
+}
+
+/// EXIF の ResolutionUnit(SHORT) を読む。EXIF が丸ごと失われていれば None。
+fn read_resolution_unit(path: &Path) -> Option<u16> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut reader = std::io::BufReader::new(&file);
+    let exif = exif::Reader::new().read_from_container(&mut reader).ok()?;
+    let field = exif.get_field(exif::Tag::ResolutionUnit, exif::In::PRIMARY)?;
+    match &field.value {
+        exif::Value::Short(v) => v.first().copied(),
+        _ => None,
+    }
 }
 
 /// 出力ディレクトリ配下の JPEG を再帰的に集める。
@@ -186,6 +199,13 @@ fn e2e_lossless_rotation_resets_exif_orientation() {
         get_orientation(&out).unwrap().orientation,
         Orientation::Normal,
         "回転後 EXIF Orientation=1 でなければならない（#7 致命バグ回帰）"
+    );
+    // メタデータ保全: Orientation 以外の EXIF（ここでは ResolutionUnit）が残ること。
+    // turbojpeg copy_none=false の保証。将来 EXIF 丸ごと破棄に退行すると None になり落ちる。
+    assert_eq!(
+        read_resolution_unit(&out),
+        Some(2),
+        "回転後も Orientation 以外の EXIF（date/GPS 相当）が保全されるべき"
     );
 }
 
