@@ -53,11 +53,11 @@ fn main() {
 
                 let photos = media
                     .iter()
-                    .filter(|m| m.media_type == photo_core::MediaType::Photo)
+                    .filter(|m| m.source.media_type == photo_core::MediaType::Photo)
                     .count();
                 let videos = media
                     .iter()
-                    .filter(|m| m.media_type == photo_core::MediaType::Video)
+                    .filter(|m| m.source.media_type == photo_core::MediaType::Video)
                     .count();
                 println!("  Photos: {}", photos);
                 println!("  Videos: {}", videos);
@@ -66,23 +66,23 @@ fn main() {
                 // Date source statistics
                 let exif_count = media
                     .iter()
-                    .filter(|m| m.date_source == photo_core::DateSource::Exif)
+                    .filter(|m| m.dates.date_source == photo_core::DateSource::Exif)
                     .count();
                 let filename_count = media
                     .iter()
-                    .filter(|m| m.date_source == photo_core::DateSource::FileName)
+                    .filter(|m| m.dates.date_source == photo_core::DateSource::FileName)
                     .count();
                 let created_count = media
                     .iter()
-                    .filter(|m| m.date_source == photo_core::DateSource::FileCreated)
+                    .filter(|m| m.dates.date_source == photo_core::DateSource::FileCreated)
                     .count();
                 let modified_count = media
                     .iter()
-                    .filter(|m| m.date_source == photo_core::DateSource::FileModified)
+                    .filter(|m| m.dates.date_source == photo_core::DateSource::FileModified)
                     .count();
                 let none_count = media
                     .iter()
-                    .filter(|m| m.date_source == photo_core::DateSource::None)
+                    .filter(|m| m.dates.date_source == photo_core::DateSource::None)
                     .count();
                 println!("Date sources:");
                 println!("  EXIF/QuickTime: {}", exif_count);
@@ -95,15 +95,15 @@ fn main() {
                 // Show timezone info for videos
                 let videos_with_tz: Vec<_> = media
                     .iter()
-                    .filter(|m| m.media_type == photo_core::MediaType::Video)
+                    .filter(|m| m.source.media_type == photo_core::MediaType::Video)
                     .collect();
                 if !videos_with_tz.is_empty() {
                     println!("=== Video Timezone Analysis ===");
                     for (i, v) in videos_with_tz.iter().take(20).enumerate() {
-                        println!("  [{}] {} -> {}", i, v.file_name, v.new_name);
-                        println!("      date_taken: {:?}", v.date_taken);
-                        println!("      timezone:   {:?}", v.timezone);
-                        println!("      date_source: {:?}", v.date_source);
+                        println!("  [{}] {} -> {}", i, v.source.file_name, v.derived.new_name);
+                        println!("      date_taken: {:?}", v.dates.date_taken);
+                        println!("      timezone:   {:?}", v.dates.timezone);
+                        println!("      date_source: {:?}", v.dates.date_source);
                     }
                     if videos_with_tz.len() > 20 {
                         println!("  ... and {} more videos", videos_with_tz.len() - 20);
@@ -114,21 +114,21 @@ fn main() {
                 // Show first 20 files
                 println!("=== First 20 files ===");
                 for (i, m) in media.iter().take(20).enumerate() {
-                    let tz_info = m.timezone.as_deref().unwrap_or("no-tz");
-                    let type_str = match m.media_type {
+                    let tz_info = m.dates.timezone.as_deref().unwrap_or("no-tz");
+                    let type_str = match m.source.media_type {
                         photo_core::MediaType::Photo => "Photo",
                         photo_core::MediaType::Video => "Video",
                     };
                     println!(
                         "  [{}] {} ({}) [{}] [tz:{}]",
-                        i, m.file_name, type_str, m.new_name, tz_info
+                        i, m.source.file_name, type_str, m.derived.new_name, tz_info
                     );
                 }
 
                 // Show burst groups
                 let burst_files: Vec<_> = media
                     .iter()
-                    .filter(|m| m.burst_group_id.is_some())
+                    .filter(|m| m.derived.burst_group_id.is_some())
                     .collect();
                 if !burst_files.is_empty() {
                     println!();
@@ -136,10 +136,10 @@ fn main() {
                     for m in burst_files.iter().take(30) {
                         println!(
                             "  Group {} #{}: {} -> {}",
-                            m.burst_group_id.unwrap(),
-                            m.burst_index.unwrap(),
-                            m.file_name,
-                            m.new_name
+                            m.derived.burst_group_id.unwrap(),
+                            m.derived.burst_index.unwrap(),
+                            m.source.file_name,
+                            m.derived.new_name
                         );
                     }
                 }
