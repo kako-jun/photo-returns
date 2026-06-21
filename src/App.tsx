@@ -289,7 +289,7 @@ function App() {
 
     // ファイル1件完了ごとにバックエンドから届く進捗イベントを受ける Channel（#4）。
     // onmessage 内では setMediaList の関数更新形を使い、stale closure（古い mediaList の
-    // キャプチャ）を避ける。Channel は invoke 解決後に GC されるので明示解除は不要。
+    // キャプチャ）を避ける。invoke 解決後は finally で listener を解除する。
     const onProgress = new Channel<ProgressEvent>();
     onProgress.onmessage = (event) => {
       // 該当行のステータス／進捗をライブ更新（new_path/logs は完了後の最終マージで確定）。
@@ -322,9 +322,15 @@ function App() {
     } catch (error) {
       console.error('Process error:', error);
       alert(`Process error: ${error}`);
+      // invoke 自体が失敗した場合（IPC エラー等）、processing のまま固まった対象行を
+      // error に落として復帰可能にする（Retry Failed の対象に乗る）。
+      setMediaList((prev) =>
+        prev.map((item) =>
+          item.status === 'processing' ? { ...item, status: 'error' as const, progress: 0 } : item
+        )
+      );
     } finally {
-      // listener を解除して以後の送信を無視（処理失敗時に行が processing のまま残らないよう、
-      // 念のため onmessage を外す）。
+      // listener を解除して以後の送信を無視する。
       onProgress.onmessage = () => {};
       setIsProcessing(false);
     }
