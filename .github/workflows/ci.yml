@@ -25,6 +25,9 @@ jobs:
       - name: Build frontend (tsc + vite)
         run: npm run build
 
+      - name: Frontend tests (vitest)
+        run: npm test
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
