@@ -84,11 +84,33 @@ describe('mergeProcessResults', () => {
     expect(merged[1].logs.map((l) => l.message)).toContain('retried ok');
   });
 
-  it('対象だが結果に無い項目は error 扱い', () => {
-    const item = media('/x.jpg', { status: 'pending' });
+  it('対象だが結果に無い項目は error 扱い・progress は 0', () => {
+    const item = media('/x.jpg', { status: 'pending', progress: 0 });
     const merged = mergeProcessResults([item], [item], []);
     expect(merged[0].status).toBe('error');
     expect(merged[0].new_path).toBe('');
+    expect(merged[0].progress).toBe(0); // 失敗なのに100%にしない
+  });
+
+  it('targets が空なら全項目を参照ごと据え置く（初回スキャン直後など）', () => {
+    const a = media('/a.jpg', { status: 'completed', new_path: '/out/a.jpg' });
+    const b = media('/b.jpg', { status: 'error' });
+    const merged = mergeProcessResults([a, b], [], []);
+    expect(merged[0]).toBe(a);
+    expect(merged[1]).toBe(b);
+  });
+
+  it('no_change の項目は targets 外なら触らない（誤 error 化しない）', () => {
+    const noChange = media('/keep.jpg', { status: 'no_change', new_path: '' });
+    const failed = media('/fail.jpg', { status: 'pending' });
+    const merged = mergeProcessResults(
+      [noChange, failed],
+      [failed],
+      [media('/fail.jpg', { new_path: '/out/fail.jpg' })]
+    );
+    expect(merged[0]).toBe(noChange); // no_change は据え置き
+    expect(merged[0].status).toBe('no_change');
+    expect(merged[1].status).toBe('completed');
   });
 
   it('プラットフォーム差のあるパスでも一致させる', () => {

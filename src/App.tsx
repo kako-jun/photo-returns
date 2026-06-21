@@ -273,6 +273,8 @@ function App() {
     setProcessResult(null);
 
     try {
+      // backend は渡した media_list だけを処理し、各項目の status は見ない。
+      // よってリトライ時は失敗ファイルのみを targets に入れれば、完了済みは再処理されない。
       const result = await invoke<ProcessResult>('process_media_with_settings', {
         mediaList: targets,
         outputDir,
