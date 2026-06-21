@@ -29,7 +29,10 @@ fn scan_media(
 // 以前はフィールドをフラットな引数に展開して即再構築していたが、option セットの定義が
 // 二重化し clippy::too_many_arguments を抑止する羽目になっていた。構造体で受けることで
 // 正本を 1 箇所に集約し、抑止属性を不要にする（#8）。`ProcessOptions` は Serialize/Deserialize
-// 済みのため wire 契約は `{ inputDir, outputDir, options: { ... } }` となる。
+// 済みのため wire 契約は `{ inputDir, outputDir, options: { ... } }`。トップレベル引数は Tauri が
+// camelCase 化するが、ネストした `options` の内部キーは ProcessOptions の serde 名そのまま＝
+// snake_case（`backup_dir` / `include_videos` / `timezone_offset` / `cleanup_temp` /
+// `auto_correct_orientation`）で渡す必要がある（rename_all 無し。photo_core::tests で固定済み）。
 #[tauri::command]
 fn process_media(
     input_dir: String,
