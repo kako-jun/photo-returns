@@ -62,6 +62,8 @@ jobs:
             libayatana-appindicator3-dev \
             pkg-config \
             libturbojpeg0-dev
+          # turbojpeg を vendor ビルドせず apt の libturbojpeg を pkg-config で使う（ubuntu のみ）
+          echo "TURBOJPEG_SOURCE=pkg-config" >> "$GITHUB_ENV"
 
       # NOTE(#7): macOS（aarch64+x86_64 ユニバーサル）と Windows の turbojpeg(libjpeg-turbo)
       # native ビルドは未設定。macOS は brew jpeg-turbo が keg-only かつ x86_64 クロスで

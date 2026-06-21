@@ -10,6 +10,11 @@ jobs:
   check:
     runs-on: ubuntu-latest
 
+    # turbojpeg-sys は既定で「ソースから vendor ビルド」(require-simd で nasm 必須)。
+    # apt の libturbojpeg0-dev を pkg-config 経由で使うよう明示する。
+    env:
+      TURBOJPEG_SOURCE: pkg-config
+
     steps:
       - uses: actions/checkout@v4
 
