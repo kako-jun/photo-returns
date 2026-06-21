@@ -48,3 +48,12 @@ export interface ProcessResult {
   media: MediaInfo[];
   errors: string[];
 }
+
+// ファイル1件完了ごとにバックエンド（Rust）から Channel 経由で届く進捗イベント（#4）。
+// Rust 側 `ProgressEvent`（serde rename_all = "camelCase"）と対応する。
+export interface ProgressEvent {
+  done: number; // 完了済み件数（1..=total、このイベント分を含む）
+  total: number; // 今回処理する総件数（リトライ時は失敗ファイル数）
+  path: string; // 完了したファイルの original_path（行引き当てキー）
+  status: 'completed' | 'error'; // Rust 側 ProgressStatus（snake_case）
+}

@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import type { MediaInfo, LogEntry } from '../types';
-import { mergeProcessResults, normalizePathForCompare, selectRetryTargets } from './processResults';
+import type { MediaInfo, LogEntry, ProgressEvent } from '../types';
+import {
+  mergeProcessResults,
+  normalizePathForCompare,
+  selectRetryTargets,
+  progressPercent,
+  applyProgressEvent,
+  markTargetsProcessing,
+} from './processResults';
 
 const log = (message: string): LogEntry => ({
   timestamp: '2026-01-01T00:00:00Z',
@@ -119,5 +126,99 @@ describe('mergeProcessResults', () => {
     const merged = mergeProcessResults([item], [item], resultMedia);
     expect(merged[0].status).toBe('completed');
     expect(merged[0].new_path).toBe('C:/out/x.jpg');
+  });
+});
+
+describe('progressPercent', () => {
+  it('done/total を 0-100 整数で返し、端数は切り捨てる', () => {
+    expect(progressPercent(0, 4)).toBe(0);
+    expect(progressPercent(1, 4)).toBe(25);
+    expect(progressPercent(4, 4)).toBe(100);
+    expect(progressPercent(1, 3)).toBe(33);
+    expect(progressPercent(2, 3)).toBe(66);
+  });
+
+  it('total<=0 は完了扱いで 100、done>total は 100 に丸める', () => {
+    expect(progressPercent(0, 0)).toBe(100);
+    expect(progressPercent(3, 0)).toBe(100);
+    expect(progressPercent(5, 4)).toBe(100);
+  });
+
+  it('バックエンド progress_percent と同じ値（同式）', () => {
+    // Rust 側 progress_percent と一致することを代表点で固定
+    for (const [d, t, p] of [
+      [0, 4, 0],
+      [2, 4, 50],
+      [1, 3, 33],
+      [2, 3, 66],
+    ] as const) {
+      expect(progressPercent(d, t)).toBe(p);
+    }
+  });
+});
+
+describe('applyProgressEvent', () => {
+  const ev = (path: string, status: 'completed' | 'error', done = 1, total = 1): ProgressEvent => ({
+    done,
+    total,
+    path,
+    status,
+  });
+
+  it('completed イベントで該当行を completed/progress=100 にする', () => {
+    const a = media('/a.jpg', { status: 'processing', progress: 0 });
+    const b = media('/b.jpg', { status: 'processing', progress: 0 });
+    const next = applyProgressEvent([a, b], ev('/a.jpg', 'completed'));
+    expect(next[0].status).toBe('completed');
+    expect(next[0].progress).toBe(100);
+    // 他の行は参照ごと不変
+    expect(next[1]).toBe(b);
+  });
+
+  it('error イベントで該当行を error/progress=0 にする（失敗で100%にしない）', () => {
+    const a = media('/a.jpg', { status: 'processing', progress: 0 });
+    const next = applyProgressEvent([a], ev('/a.jpg', 'error'));
+    expect(next[0].status).toBe('error');
+    expect(next[0].progress).toBe(0);
+  });
+
+  it('一致行が無ければ配列を参照ごと据え置く（無駄な再レンダー回避）', () => {
+    const list = [media('/a.jpg', { status: 'processing' })];
+    const next = applyProgressEvent(list, ev('/zzz.jpg', 'completed'));
+    expect(next).toBe(list);
+  });
+
+  it('プラットフォーム差のあるパスでも一致させる', () => {
+    const a = media('C:\\photos\\x.jpg', { status: 'processing' });
+    const next = applyProgressEvent([a], ev('C:/photos/x.jpg', 'completed'));
+    expect(next[0].status).toBe('completed');
+  });
+
+  it('new_path / logs は触らない（ライブ表示のみ。最終確定は merge が担う）', () => {
+    const a = media('/a.jpg', { status: 'processing', new_path: '', logs: [log('scan')] });
+    const next = applyProgressEvent([a], ev('/a.jpg', 'completed'));
+    expect(next[0].new_path).toBe('');
+    expect(next[0].logs.map((l) => l.message)).toEqual(['scan']);
+  });
+});
+
+describe('markTargetsProcessing', () => {
+  it('対象行のみ processing/progress=0 にし、対象外は参照ごと据え置く', () => {
+    const a = media('/a.jpg', { status: 'completed', progress: 100, new_path: '/out/a.jpg' });
+    const b = media('/b.jpg', { status: 'error', progress: 0 });
+    const c = media('/c.jpg', { status: 'pending' });
+    const next = markTargetsProcessing([a, b, c], [b]);
+    // 対象外は不変参照
+    expect(next[0]).toBe(a);
+    expect(next[2]).toBe(c);
+    // 対象は processing にリセット
+    expect(next[1].status).toBe('processing');
+    expect(next[1].progress).toBe(0);
+  });
+
+  it('対象が空なら全行を参照ごと据え置く', () => {
+    const a = media('/a.jpg', { status: 'completed' });
+    const next = markTargetsProcessing([a], []);
+    expect(next[0]).toBe(a);
   });
 });

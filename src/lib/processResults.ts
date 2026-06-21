@@ -1,4 +1,57 @@
-import type { MediaInfo } from '../types';
+import type { MediaInfo, ProgressEvent } from '../types';
+
+/**
+ * done/total から進捗パーセント（0-100, 整数）を求める。
+ * `total === 0` は完了扱いで 100。端数は切り捨て、`done >= total` は 100 に丸める。
+ * バックエンド（Rust `progress_percent`）と同じ式。
+ */
+export function progressPercent(done: number, total: number): number {
+  if (total <= 0) return 100;
+  const d = Math.min(done, total);
+  return Math.floor((d * 100) / total);
+}
+
+/**
+ * 1件分の進捗イベントを全リストにマージする（#4）。
+ *
+ * `event.path`（バックエンドの original_path）に一致する1行だけを更新する。完了したファイルは
+ * status を completed / error にし、progress を成否で出し分ける（成功=100、失敗=0。失敗で 100%
+ * にすると「失敗なのに100%」になるため）。一致しない行は同一参照のまま据え置く（再レンダー最小化）。
+ *
+ * 注: ここでは `new_path` / `logs` は触らない（それらは処理完了後の `mergeProcessResults` が
+ * 確定値で上書きする）。本関数は処理中のライブ表示のみを担う。
+ */
+export function applyProgressEvent(fullList: MediaInfo[], event: ProgressEvent): MediaInfo[] {
+  const key = normalizePathForCompare(event.path);
+  let changed = false;
+  const next = fullList.map((item) => {
+    if (normalizePathForCompare(item.original_path) !== key) {
+      return item;
+    }
+    changed = true;
+    return {
+      ...item,
+      status: event.status === 'completed' ? ('completed' as const) : ('error' as const),
+      progress: event.status === 'completed' ? 100 : 0,
+    };
+  });
+  // 一致行が無ければ参照ごと不変を返す（無駄な再レンダーを避ける）
+  return changed ? next : fullList;
+}
+
+/**
+ * 処理対象 targets を「処理中」状態にリセットする（invoke 直前に呼ぶ、#4）。
+ * 対象行だけ status=processing / progress=0 にし、対象外は据え置く。
+ */
+export function markTargetsProcessing(fullList: MediaInfo[], targets: MediaInfo[]): MediaInfo[] {
+  const targetPaths = new Set(targets.map((t) => normalizePathForCompare(t.original_path)));
+  return fullList.map((item) => {
+    if (!targetPaths.has(normalizePathForCompare(item.original_path))) {
+      return item;
+    }
+    return { ...item, status: 'processing' as const, progress: 0 };
+  });
+}
 
 /**
  * プラットフォーム依存のパス区切り（Windows の `\\` と POSIX の `/`）を吸収して

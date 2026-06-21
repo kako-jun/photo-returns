@@ -267,7 +267,7 @@ output/
 ### バックエンド (src-tauri/src/)
 
 **コアファイル:**
-- `lib.rs` - Tauri コマンド定義（scan_media, process_media, reveal_in_filemanager）
+- `lib.rs` - Tauri コマンド定義（scan_media, process_media, process_media_with_settings, reveal_in_filemanager）。`process_media_with_settings` は `Channel<ProgressEvent>` でリアルタイム進捗を送る（#4）
 - `photo_core/` - コア処理ロジック（責務別モジュール）
   - `mod.rs` - 公開型（MediaInfo / ProcessOptions / ProcessResult / MediaType / DateSource 等）とパイプライン（scan_media / process_media / process_media_with_list）
     - メディアスキャン
@@ -393,10 +393,39 @@ npm run format:rust:check  # rustfmt チェック
 - **詳細ログ**: デバッグ用に全ステップ記録
 - **リトライ機能**: エラーファイルのみ再処理可能
 
+### リアルタイム進捗（Channel 方式 / #4）
+
+処理は `process_media_with_settings` コマンドで実行し、進捗を Tauri 2 の
+`tauri::ipc::Channel<ProgressEvent>` でファイル1件完了ごとにフロントへ送る。フェイクの
+0%→100% は廃止した。
+
+- **バックエンド (`photo_core/mod.rs`)**
+  - `ProgressEvent { done, total, path, status }`（`done` は完了済み件数 1..=total、
+    `status` は `completed` / `error`）を1ファイルの処理が終わるたびに1回 emit する。
+  - 並列(rayon)処理でも `done` は `Arc<AtomicUsize>` の `fetch_add` で採番するため、
+    到着順に関係なく 1..=total を1度ずつ網羅する（取りこぼし・重複なし）。
+  - 処理本体は `process_one(item) -> ProgressStatus` に切り出し、早期 return（バックアップ
+    失敗・ディレクトリ作成失敗など）もステータスを返して抜けることで、結果を問わず
+    「1ファイル1イベント」を構造的に保証する（return 漏れによるカウント取りこぼし防止）。
+  - 進捗パーセントは純関数 `progress_percent(done, total)`（0-100整数、端数切り捨て、
+    `total==0` は 100）で計算し、フロントの `progressPercent` と同式。
+- **コマンド境界 (`lib.rs`)**
+  - `process_media_with_settings(..., on_progress: Channel<ProgressEvent>)`。チャネル送信
+    失敗（フロントが listener を破棄した等）は処理継続を妨げないため握り潰す。
+- **フロントエンド (`App.tsx` / `lib/processResults.ts`)**
+  - invoke 時に `new Channel<ProgressEvent>()` を渡し、`onmessage` で `applyProgressEvent`
+    により該当行の `status`/`progress` をライブ更新する。`setMediaList` は関数更新形を使い
+    stale closure を避ける。
+  - invoke 直前に `markTargetsProcessing` で対象行を `processing`/`progress=0` にリセット。
+  - 全体進捗バーは `MainLayout` に表示（`progressPercent(done, total)`）。`done` は単調増加で
+    更新する。
+  - 処理完了後、`new_path`/`logs` 等の確定値は従来どおり `mergeProcessResults`（#6）で
+    上書きする。ライブ進捗（`applyProgressEvent`）は表示のみで `new_path`/`logs` を触らない。
+  - **リトライ**（失敗ファイルのみ再処理）でも `total = targets.length` なので進捗が正しく出る。
+
 ## 今後の拡張機能（オプション）
 
 ### 潜在的な機能
-- リアルタイム進捗ストリーミング（現在は0%か100%のみ）
 - バックアップディレクトリオプション（UI統合）
 - カスタム日付フォーマット設定
 - 重複検出（ハッシュベース）

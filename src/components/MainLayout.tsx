@@ -9,6 +9,7 @@ import { ProcessingFlow } from './ProcessingFlow';
 import { LightBox } from './LightBox';
 import { DirectorySelection } from './DirectorySelection';
 import { DefaultSettings } from './DefaultSettings';
+import { progressPercent } from '../lib/processResults';
 
 interface MainLayoutProps {
   isDark: boolean;
@@ -34,6 +35,8 @@ interface MainLayoutProps {
   onProcessMedia: () => void;
   onRetryFailed: () => void;
   isProcessing: boolean;
+  progressDone: number;
+  progressTotal: number;
   mediaList: MediaInfo[];
   processResult: ProcessResult | null;
   table: Table<MediaInfo>;
@@ -69,6 +72,8 @@ export function MainLayout({
   onProcessMedia,
   onRetryFailed,
   isProcessing,
+  progressDone,
+  progressTotal,
   mediaList,
   processResult,
   table,
@@ -156,6 +161,44 @@ export function MainLayout({
                 {isProcessing ? 'PROCESSING...' : 'PROCESS & RENAME'}
               </button>
             </div>
+
+            {/* Overall progress bar — live during processing (#4) */}
+            {isProcessing && progressTotal > 0 && (
+              <div className="flex flex-col gap-1.5 pt-1">
+                <div className="flex items-center justify-between">
+                  <span
+                    className="led-display text-xs"
+                    style={{ color: '#44ff44', letterSpacing: '0.1em' }}
+                  >
+                    PROCESSING {String(progressDone).padStart(4, '0')} /{' '}
+                    {String(progressTotal).padStart(4, '0')}
+                  </span>
+                  <span
+                    className="led-display text-xs"
+                    style={{ color: '#44ff44', letterSpacing: '0.1em' }}
+                  >
+                    {progressPercent(progressDone, progressTotal)}%
+                  </span>
+                </div>
+                <div
+                  className="h-2 w-full overflow-hidden rounded-sm"
+                  style={{ background: '#0a0a0a', border: '1px solid #222' }}
+                  role="progressbar"
+                  aria-valuenow={progressPercent(progressDone, progressTotal)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
+                  <div
+                    className="h-full transition-all duration-200"
+                    style={{
+                      width: `${progressPercent(progressDone, progressTotal)}%`,
+                      background: 'linear-gradient(90deg, #2a8a2a, #44ff44)',
+                      boxShadow: '0 0 6px rgba(68,255,68,0.6)',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

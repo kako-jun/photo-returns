@@ -3,9 +3,10 @@ pub mod orientation;
 pub mod photo_core;
 pub mod video_metadata;
 
-use photo_core::{MediaInfo, ProcessOptions, ProcessResult};
+use photo_core::{MediaInfo, ProcessOptions, ProcessResult, ProgressEvent};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use tauri::ipc::Channel;
 
 /// 指定ディレクトリのメディアファイルをスキャンして情報を取得
 #[tauri::command]
@@ -46,6 +47,12 @@ fn process_media(
 }
 
 /// 事前スキャン済みメディアリストを使って処理（UIの設定を尊重）
+///
+/// 進捗はファイル1件完了ごとに `on_progress` チャネルへ `ProgressEvent` を送る（#4）。
+/// フロントは invoke 時に `new Channel<ProgressEvent>()` を渡し、`onmessage` で
+/// 該当行と全体進捗をリアルタイム更新する。並列(rayon)処理でも `done` は 1..=total を
+/// 1度ずつ採番するため取りこぼし・重複しない。チャネルは `Send + Sync` で複数スレッドから
+/// 安全に送れる。
 #[tauri::command]
 fn process_media_with_settings(
     media_list: Vec<MediaInfo>,
@@ -54,6 +61,7 @@ fn process_media_with_settings(
     parallel: bool,
     include_videos: bool,
     cleanup_temp: bool,
+    on_progress: Channel<ProgressEvent>,
 ) -> Result<ProcessResult, String> {
     let output_path = PathBuf::from(output_dir);
     let backup_path = backup_dir.map(PathBuf::from);
@@ -68,8 +76,11 @@ fn process_media_with_settings(
     };
 
     let mut media = media_list;
-    photo_core::process_media_with_list(&mut media, &output_path, &options)
-        .map_err(|e| e.to_string())
+    photo_core::process_media_with_list_progress(&mut media, &output_path, &options, move |ev| {
+        // チャネル送信失敗（フロントが listener を破棄した等）は処理継続を妨げないため握り潰す。
+        let _ = on_progress.send(ev);
+    })
+    .map_err(|e| e.to_string())
 }
 
 /// ファイルをファイラーで開く（ファイルを選択した状態）
