@@ -149,6 +149,20 @@
   - Retry Failed Filesボタン
 - エラーファイルのみ再処理機能
 
+### Phase 8: 方向確認ポップアップ（#7 Phase C）✅
+- 眼科Cの4方向ピッカー。EXIF は「どれを見せるか」の篩としてだけ使い、回転の正解は人間が決める
+- 純粋ロジック `src/lib/orientationQueue.ts`（vitest 固定）：
+  - `selectOrientationQueue`：写真かつ Orientation≠1 かつ非ミラー（2/4/5/7 除外）を抽出
+  - `exifDegrees`：3→180 / 6→90 / 8→270 / その他→0（生ピクセルを正立させる CW 度）
+  - `resolveRotationMode(initialDeg, direction)`：初期角＋4方向の追加回転 → 絶対 `'none'|'90'|'180'|'270'`
+  - 4方向の追加回転（CW 正）：↑ +0 / ← +90 / → −90 / ↓ +180
+- `OrientationConfirm.tsx` モーダル：生ピクセル＋`imageOrientation:'none'`＋`transform:rotate(initialDeg)` で
+  EXIF 補正済みの見え方を初期表示。矢印キー(↑→↓←)/クリックで「こっちが上」を1回指定→即確定→auto-advance。
+  Space=スキップ（rotation_mode 据え置き）、Esc/×=途中終了。進捗 n/total
+- `App.tsx` 配線：scan 後にキューが1件以上なら「向きを確認 (N)」ボタンで起動（自動起動はしない＝安全側）。
+  確定で該当 item の `rotation_mode` を絶対角に更新→既存ロスレス回転が適用。既存 dropdown/Before-After は不変
+- backend は不変（フロントのみ）。**回転方向の左右の符号は GUI 実機での目視が要る唯一の点**（逆なら ←/→ の +90/−90 を入替）
+
 ## 主要機能
 
 ### 自動実行される操作
@@ -256,11 +270,16 @@ output/
 - `ProcessSummary.tsx` - 処理結果サマリー + Retryボタン
 - `LogViewer.tsx` (135行) - ログ表示モーダル
 - `LightBox.tsx` - 画像ライトボックス
+- `OrientationConfirm.tsx` - 方向確認ポップアップ（眼科Cの4方向ピッカー・#7 Phase C）
 - `Header.tsx` / `Footer.tsx` - ヘッダー/フッター
 - `ScrollToTopButton.tsx` - トップへスクロール
 
 **カスタムフック (src/hooks/):**
 - `useMediaTableColumns.tsx` (600+行) - TanStack Table列定義
+
+**純粋ロジック (src/lib/):**
+- `processResults.ts` - 処理結果マージ・進捗・リトライ対象抽出（vitest 固定）
+- `orientationQueue.ts` - 方向確認の対象抽出・4方向→絶対回転角の写像（vitest 固定・#7 Phase C）
 
 **型定義:**
 - `types.ts` - MediaInfo, ProcessResult, LogEntry等

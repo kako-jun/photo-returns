@@ -1,5 +1,5 @@
 import { Table, flexRender, type ColumnDef } from '@tanstack/react-table';
-import { HiOutlineMagnifyingGlass, HiOutlineCog } from 'react-icons/hi2';
+import { HiOutlineMagnifyingGlass, HiOutlineCog, HiOutlineArrowPath } from 'react-icons/hi2';
 import type { MediaInfo, ProcessResult } from '../types';
 import { Header } from './Header';
 import { Footer } from './Footer';
@@ -46,6 +46,10 @@ interface MainLayoutProps {
   showScrollToTop: boolean;
   onScrollToTop: () => void;
   isMockMode: boolean;
+  /** 方向確認ポップアップ（#7 Phase C）の対象件数。0 ならボタンを無効化する。 */
+  orientationCandidateCount: number;
+  /** 方向確認ポップアップを起動する。 */
+  onStartOrientationConfirm: () => void;
 }
 
 export function MainLayout({
@@ -83,6 +87,8 @@ export function MainLayout({
   showScrollToTop,
   onScrollToTop,
   isMockMode,
+  orientationCandidateCount,
+  onStartOrientationConfirm,
 }: MainLayoutProps) {
   return (
     <div
@@ -151,6 +157,19 @@ export function MainLayout({
               >
                 <HiOutlineMagnifyingGlass className="h-4 w-4" />
                 {isScanning ? 'SCANNING...' : 'SCAN MEDIA'}
+              </button>
+              {/* 方向確認ポップアップ起動（#7 Phase C）。対象（写真・Orientation≠1・非ミラー）が
+                  あるときだけ有効。自動起動はせずユーザーが明示的に押す（安全側）。 */}
+              <button
+                onClick={onStartOrientationConfirm}
+                disabled={orientationCandidateCount === 0 || isProcessing}
+                className="btn-hardware flex items-center gap-2 rounded px-8 py-2.5 disabled:opacity-40"
+                title="向きを確認: 回転候補の写真を1枚ずつ確認する"
+              >
+                <HiOutlineArrowPath className="h-4 w-4" />
+                {orientationCandidateCount > 0
+                  ? `向きを確認 (${orientationCandidateCount})`
+                  : '向きを確認'}
               </button>
               <button
                 onClick={onProcessMedia}
