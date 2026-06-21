@@ -388,7 +388,13 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
 const JST_OFFSET_SECONDS: i64 = 9 * 3600;
 
 /// "+09:00" / "-05:30" 形式のオフセット文字列を秒に変換する。形式不正は None。
+///
+/// 受理する範囲は実在するタイムゾーンと UI ドロップダウン（docs/development.md）に合わせ
+/// `-12:00`（-43200s）〜 `+14:00`（+50400s）。範囲外は None。
 fn parse_offset_seconds(s: &str) -> Option<i64> {
+    const MIN_OFFSET: i64 = -12 * 3600; // -12:00
+    const MAX_OFFSET: i64 = 14 * 3600; // +14:00
+
     let bytes = s.as_bytes();
     if bytes.len() != 6 || bytes[3] != b':' {
         return None;
@@ -403,7 +409,11 @@ fn parse_offset_seconds(s: &str) -> Option<i64> {
     if hh > 23 || mm > 59 {
         return None;
     }
-    Some(sign * (hh * 3600 + mm * 60))
+    let total = sign * (hh * 3600 + mm * 60);
+    if !(MIN_OFFSET..=MAX_OFFSET).contains(&total) {
+        return None;
+    }
+    Some(total)
 }
 
 /// ユーザー選択の `overrides.timezone_offset` に従い、撮影日時を JST(UTC+9) 基準へ補正する。
@@ -443,6 +453,12 @@ fn apply_timezone_correction(item: &mut MediaInfo) {
 
     let corrected_naive = date.naive_local() + Duration::seconds(shift);
     let Some(corrected) = Local.from_local_datetime(&corrected_naive).single() else {
+        // ローカル TZ の DST gap/fold に当たり一意に解決できなかった場合は無補正にする
+        // （JST は DST 無しなので通常は発生しない）。
+        item.add_log(
+            LogLevel::Warning,
+            format!("Timezone correction skipped: ambiguous local time after shift {shift}s"),
+        );
         return;
     };
 
@@ -924,12 +940,28 @@ mod tests {
         assert_eq!(parse_offset_seconds("+00:00"), Some(0));
         assert_eq!(parse_offset_seconds("-05:30"), Some(-19800));
         assert_eq!(parse_offset_seconds("+14:00"), Some(50400));
+        assert_eq!(parse_offset_seconds("-12:00"), Some(-43200));
         // 不正形式
         assert_eq!(parse_offset_seconds("none"), None);
         assert_eq!(parse_offset_seconds("0900"), None);
         assert_eq!(parse_offset_seconds("+9:00"), None);
         assert_eq!(parse_offset_seconds("+25:00"), None);
         assert_eq!(parse_offset_seconds("+09:60"), None);
+        // 仕様レンジ（-12:00〜+14:00）外は弾く
+        assert_eq!(parse_offset_seconds("+15:00"), None);
+        assert_eq!(parse_offset_seconds("-13:00"), None);
+    }
+
+    #[test]
+    fn tz_correction_half_hour_offset() {
+        // -05:30 → shift = 32400 - (-19800) = 52200s = +14:30
+        let mut item = tz_item(local_dt(2024, 1, 1, 9, 0, 0), None, Some("-05:30"), None);
+        apply_timezone_correction(&mut item);
+        assert_eq!(
+            item.dates.date_taken.unwrap(),
+            local_dt(2024, 1, 1, 23, 30, 0)
+        );
+        assert_eq!(item.derived.new_name, "2024-01-01_23-30-00.jpg");
     }
 
     #[test]
