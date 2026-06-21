@@ -252,15 +252,18 @@ output/
 
 **コアファイル:**
 - `lib.rs` - Tauri コマンド定義（scan_media, process_media, reveal_in_filemanager）
-- `photo_core.rs` (740+行) - コア処理ロジック
-  - メディアスキャン
-  - EXIF 抽出
-  - ファイルリネーム
-  - ディレクトリ作成
-  - バースト統合
-  - **画像回転処理**
-  - **EXIF Orientation書き換え呼び出し**
-  - **詳細ログ記録**
+- `photo_core/` - コア処理ロジック（責務別モジュール）
+  - `mod.rs` - 公開型（MediaInfo / ProcessOptions / ProcessResult / MediaType / DateSource 等）とパイプライン（scan_media / process_media / process_media_with_list）
+    - メディアスキャン
+    - ファイルリネーム
+    - バースト統合
+    - **画像回転処理**
+    - **EXIF Orientation書き換え呼び出し**
+    - **詳細ログ記録**
+  - `dating.rs` - ファイル名からの日付抽出 / ファイル作成・変更日時取得 / ファイル名生成
+  - `exif_info.rs` - EXIF 抽出 / 画像・動画拡張子判定（モジュール名は exif クレートとの衝突回避のため exif_info）
+  - `layout.rs` - 日付階層ディレクトリ作成 / バックアップ / unsorted ディレクトリ作成
+  - 外部参照パス（`photo_core::scan_media` 等）は従来どおり有効
 - `burst.rs` (213行) - バースト検出アルゴリズム
 - `orientation.rs` (220+行) - 画像向き処理
   - EXIF orientation 読み取り
