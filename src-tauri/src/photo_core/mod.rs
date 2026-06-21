@@ -6,6 +6,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use walkdir::WalkDir;
 
@@ -175,6 +176,45 @@ pub struct ProcessResult {
     pub processed_files: usize,
     pub media: Vec<MediaInfo>,
     pub errors: Vec<String>,
+}
+
+/// 進捗イベント（ファイル1件完了ごとにフロントへ送る、#4）
+///
+/// `process_media_with_list` の処理ループから各ファイルの完了時（成功/失敗の両方）に
+/// 1 回ずつ emit する。`done` は「完了済み件数」（このイベント自身を含む。並列処理では
+/// `Arc<AtomicUsize>` で採番するため到着順とは無関係に 1..=total を1度ずつ網羅する）。
+/// フロントは `original_path` で該当行を引き当て、`done`/`total` から全体進捗を更新する。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProgressEvent {
+    /// 完了済み件数（1..=total）。このイベントの分を含む。
+    pub done: usize,
+    /// 総件数（今回処理する対象数。リトライ時は失敗ファイル数）。
+    pub total: usize,
+    /// 完了したファイルの元パス（フロントの行引き当てキー）。
+    pub path: String,
+    /// このファイルの結果（"completed" / "error"）。
+    pub status: ProgressStatus,
+}
+
+/// 進捗イベントのファイル単位ステータス
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProgressStatus {
+    Completed,
+    Error,
+}
+
+/// done/total から進捗パーセント（0-100, 整数）を求める純関数。
+///
+/// `total == 0` のときは 100 を返す（処理対象ゼロ＝完了扱い）。端数は切り捨て、
+/// `done >= total` は 100 に丸める。フロント/バックエンドで同じ式を使うため切り出す。
+pub fn progress_percent(done: usize, total: usize) -> u32 {
+    if total == 0 {
+        return 100;
+    }
+    let done = done.min(total);
+    ((done as u64 * 100) / total as u64) as u32
 }
 
 /// ログエントリを追加するヘルパー
@@ -485,7 +525,24 @@ pub fn process_media_with_list(
     output_dir: &Path,
     options: &ProcessOptions,
 ) -> Result<ProcessResult> {
-    process_media_inner(media, output_dir, options)
+    process_media_inner(media, output_dir, options, |_| {})
+}
+
+/// 進捗コールバック付きで事前スキャン済みのメディアリストを処理する（#4）。
+///
+/// `on_progress` はファイル1件の処理が終わるたび（成功/失敗の両方）に1回ずつ呼ばれる。
+/// 並列処理時は複数スレッドから呼ばれ得るので、コールバック側はスレッドセーフであること
+/// （Tauri の `ipc::Channel` は `Send + Sync` で、内部で順序づけて送る）。
+pub fn process_media_with_list_progress<F>(
+    media: &mut Vec<MediaInfo>,
+    output_dir: &Path,
+    options: &ProcessOptions,
+    on_progress: F,
+) -> Result<ProcessResult>
+where
+    F: Fn(ProgressEvent) + Sync + Send,
+{
+    process_media_inner(media, output_dir, options, on_progress)
 }
 
 /// メディアファイルをリネームして階層構造にコピー（再スキャンあり版、CLI用）
@@ -495,25 +552,50 @@ pub fn process_media(
     options: &ProcessOptions,
 ) -> Result<ProcessResult> {
     let mut media = scan_media(input_dir, options)?;
-    process_media_inner(&mut media, output_dir, options)
+    process_media_inner(&mut media, output_dir, options, |_| {})
 }
 
 /// メディアファイルをリネームして階層構造にコピー（内部実装）
-fn process_media_inner(
+///
+/// `on_progress` はファイル1件完了ごと（成功/失敗の両方）に呼ばれる。並列(rayon)時は
+/// 複数スレッドから同時に呼ばれるため `Sync + Send` を要求する。`done` カウンタは
+/// `Arc<AtomicUsize>` で採番し、到着順に関係なく 1..=total を1度ずつ網羅する。
+fn process_media_inner<F>(
     media: &mut Vec<MediaInfo>,
     output_dir: &Path,
     options: &ProcessOptions,
-) -> Result<ProcessResult> {
+    on_progress: F,
+) -> Result<ProcessResult>
+where
+    F: Fn(ProgressEvent) + Sync + Send,
+{
     let total_files = media.len();
 
     let errors = Arc::new(Mutex::new(Vec::new()));
     let success_count = Arc::new(Mutex::new(0_usize));
+    // 完了済み件数（成功/失敗を問わない）。並列でも競合しないよう Atomic で採番する。
+    let done_count = Arc::new(AtomicUsize::new(0));
 
     // TOCTOU競合防止: ファイル名スロット割り当てとコピーをアトミックに行うためのロック。
     // 並列処理時に複数スレッドが同じ出力パスへ同時書き込みするのを防ぐ。
     let file_slot_lock = Arc::new(Mutex::new(()));
 
-    let processor = |item: &mut MediaInfo| {
+    // ファイル1件の処理が終わるたびに進捗イベントを1回送る。
+    let emit_progress = |item: &MediaInfo, status: ProgressStatus| {
+        // fetch_add は加算前の値を返すので +1 が「このファイルを含む完了件数」。
+        let done = done_count.fetch_add(1, Ordering::SeqCst) + 1;
+        on_progress(ProgressEvent {
+            done,
+            total: total_files,
+            path: item.source.original_path.to_string_lossy().to_string(),
+            status,
+        });
+    };
+
+    // 1ファイルを処理し、結果ステータス（Completed / Error）を返す。
+    // 進捗イベントは呼び出し側で「結果を問わず1回だけ」emit するため、ここでは早期 return も
+    // ステータスを返して抜ける（return 漏れによる進捗カウント取りこぼしを構造的に防ぐ）。
+    let process_one = |item: &mut MediaInfo| -> ProgressStatus {
         {
             item.add_log(
                 LogLevel::Info,
@@ -534,7 +616,7 @@ fn process_media_inner(
                     );
                     item.add_log(LogLevel::Error, &msg);
                     errors.lock().unwrap().push(msg);
-                    return;
+                    return ProgressStatus::Error;
                 } else {
                     item.add_log(LogLevel::Info, "Backup created successfully");
                 }
@@ -558,7 +640,7 @@ fn process_media_inner(
                         );
                         item.add_log(LogLevel::Error, &msg);
                         errors.lock().unwrap().push(msg);
-                        return;
+                        return ProgressStatus::Error;
                     }
                 }
             } else {
@@ -577,7 +659,7 @@ fn process_media_inner(
                         );
                         item.add_log(LogLevel::Error, &msg);
                         errors.lock().unwrap().push(msg);
-                        return;
+                        return ProgressStatus::Error;
                     }
                 }
             };
@@ -699,13 +781,21 @@ fn process_media_inner(
                     }
 
                     *success_count.lock().unwrap() += 1;
+                    ProgressStatus::Completed
                 }
                 Err(msg) => {
                     item.add_log(LogLevel::Error, &msg);
                     errors.lock().unwrap().push(msg);
+                    ProgressStatus::Error
                 }
             }
         }
+    };
+
+    // 1ファイル処理 → 結果を問わず進捗を1回 emit する。
+    let processor = |item: &mut MediaInfo| {
+        let status = process_one(item);
+        emit_progress(item, status);
     };
 
     if options.parallel {
@@ -1015,5 +1105,145 @@ mod tests {
         );
         // subsec はミリ秒なので TZ で動かず保持される
         assert_eq!(item.derived.new_name, "2024-01-02_00-00-00-123.jpg");
+    }
+
+    // ---- 進捗（#4）----
+
+    /// フロント契約: ProgressEvent は camelCase キー（done/total/path/status）、
+    /// status は snake_case の "completed"/"error"。`types.ts` の ProgressEvent と一致。
+    #[test]
+    fn progress_event_wire_format() {
+        let ev = ProgressEvent {
+            done: 2,
+            total: 4,
+            path: "/in/IMG.jpg".to_string(),
+            status: ProgressStatus::Completed,
+        };
+        let value = serde_json::to_value(&ev).expect("serialize ProgressEvent");
+        let obj = value.as_object().expect("object");
+        let keys: BTreeSet<&str> = obj.keys().map(|k| k.as_str()).collect();
+        assert_eq!(
+            keys,
+            BTreeSet::from(["done", "total", "path", "status"]),
+            "ProgressEvent のキーは done/total/path/status（camelCase）のはず"
+        );
+        assert_eq!(obj["status"], serde_json::json!("completed"));
+
+        let err = ProgressEvent {
+            status: ProgressStatus::Error,
+            ..ev
+        };
+        let v = serde_json::to_value(&err).unwrap();
+        assert_eq!(v["status"], serde_json::json!("error"));
+    }
+
+    #[test]
+    fn progress_percent_basic_and_edges() {
+        assert_eq!(progress_percent(0, 4), 0);
+        assert_eq!(progress_percent(1, 4), 25);
+        assert_eq!(progress_percent(2, 4), 50);
+        assert_eq!(progress_percent(4, 4), 100);
+        // 端数は切り捨て: 1/3 = 33%
+        assert_eq!(progress_percent(1, 3), 33);
+        assert_eq!(progress_percent(2, 3), 66);
+        // total==0 は完了扱い（100）
+        assert_eq!(progress_percent(0, 0), 100);
+        // done > total でも 100 に丸める（防御的）
+        assert_eq!(progress_percent(5, 4), 100);
+    }
+
+    /// 進捗 done は 1..=total を1度ずつ網羅し、ファイル数ぶん emit される。
+    /// 並列処理でも到着順に関係なく到達点（done の集合）が一致することを検証する。
+    #[test]
+    fn progress_emits_once_per_file_covering_1_to_total() {
+        use std::collections::BTreeSet;
+        use std::sync::Mutex as StdMutex;
+
+        let tmp = std::env::temp_dir().join(format!(
+            "photo_returns_progress_test_{}",
+            std::process::id()
+        ));
+        let in_dir = tmp.join("in");
+        let out_dir = tmp.join("out");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&in_dir).unwrap();
+        fs::create_dir_all(&out_dir).unwrap();
+
+        // 入力ファイルを4つ用意（中身は何でもよい。日付なし→unsorted へコピーされる）。
+        let mut media = Vec::new();
+        for i in 0..4 {
+            let p = in_dir.join(format!("file{i}.jpg"));
+            fs::write(&p, b"x").unwrap();
+            media.push(tz_item(local_dt(2024, 1, 1, 0, 0, i), None, None, None));
+            // original_path をこのファイルに差し替える（コピー元が実在する必要がある）
+            let last = media.last_mut().unwrap();
+            last.source.original_path = p.clone();
+            last.source.file_name = format!("file{i}.jpg");
+            last.dates.date_taken = Some(local_dt(2024, 1, 1, 0, 0, i));
+        }
+
+        let events: Arc<StdMutex<Vec<ProgressEvent>>> = Arc::new(StdMutex::new(Vec::new()));
+        let events_cb = Arc::clone(&events);
+
+        let options = ProcessOptions {
+            parallel: true,
+            ..Default::default()
+        };
+        let result = process_media_with_list_progress(&mut media, &out_dir, &options, move |ev| {
+            events_cb.lock().unwrap().push(ev);
+        })
+        .unwrap();
+
+        let collected = events.lock().unwrap();
+        // ファイル数ぶん emit
+        assert_eq!(collected.len(), 4, "1ファイル1イベントのはず");
+        // total は全件
+        assert!(collected.iter().all(|e| e.total == 4));
+        // done は 1..=4 を1度ずつ網羅（並列でも採番が一意）
+        let dones: BTreeSet<usize> = collected.iter().map(|e| e.done).collect();
+        assert_eq!(dones, BTreeSet::from([1, 2, 3, 4]));
+        // 全件成功（実在ファイルを out へコピー）
+        assert!(collected
+            .iter()
+            .all(|e| e.status == ProgressStatus::Completed));
+        assert_eq!(result.processed_files, 4);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// コピー元が存在しないファイルは Error ステータスで emit され、進捗カウントは進む。
+    #[test]
+    fn progress_emits_error_status_on_failure() {
+        let tmp = std::env::temp_dir().join(format!(
+            "photo_returns_progress_err_test_{}",
+            std::process::id()
+        ));
+        let out_dir = tmp.join("out");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&out_dir).unwrap();
+
+        // 実在しないコピー元 → fs::copy が失敗し Error になる
+        let mut item = tz_item(local_dt(2024, 1, 1, 12, 0, 0), None, None, None);
+        item.source.original_path = tmp.join("does_not_exist.jpg");
+        let mut media = vec![item];
+
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let cb = Arc::clone(&captured);
+        let options = ProcessOptions {
+            parallel: false,
+            ..Default::default()
+        };
+        process_media_with_list_progress(&mut media, &out_dir, &options, move |ev| {
+            cb.lock().unwrap().push(ev);
+        })
+        .unwrap();
+
+        let evs = captured.lock().unwrap();
+        assert_eq!(evs.len(), 1);
+        assert_eq!(evs[0].status, ProgressStatus::Error);
+        assert_eq!(evs[0].done, 1);
+        assert_eq!(evs[0].total, 1);
+
+        let _ = fs::remove_dir_all(&tmp);
     }
 }

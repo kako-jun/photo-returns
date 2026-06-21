@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, Channel } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   useReactTable,
@@ -9,8 +9,13 @@ import {
 } from '@tanstack/react-table';
 import './App.css';
 import { MOCK_ENABLED, mockMediaList, mockProcessResult } from './mock-data';
-import type { MediaInfo, ProcessResult } from './types';
-import { mergeProcessResults, selectRetryTargets } from './lib/processResults';
+import type { MediaInfo, ProcessResult, ProgressEvent } from './types';
+import {
+  mergeProcessResults,
+  selectRetryTargets,
+  applyProgressEvent,
+  markTargetsProcessing,
+} from './lib/processResults';
 import { MainLayout } from './components/MainLayout';
 import { useMediaTableColumns } from './hooks/useMediaTableColumns';
 import { getStorageValue, saveStorage } from './storage';
@@ -31,6 +36,12 @@ function App() {
   const [mediaList, setMediaList] = useState<MediaInfo[]>(MOCK_ENABLED ? mockMediaList : []);
   const [isScanning, setIsScanning] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  // 全体進捗（#4）: 処理中ファイル数 done/total と派生パーセント。処理開始でリセット、
+  // Channel 受信ごとに更新する。
+  const [progress, setProgress] = useState<{ done: number; total: number }>({
+    done: 0,
+    total: 0,
+  });
   const [processResult, setProcessResult] = useState<ProcessResult | null>(
     MOCK_ENABLED ? mockProcessResult : null
   );
@@ -271,6 +282,23 @@ function App() {
 
     setIsProcessing(true);
     setProcessResult(null);
+    // 全体進捗をリセット（total = 今回処理する件数。リトライ時は失敗ファイル数）。
+    setProgress({ done: 0, total: targets.length });
+    // 対象行を「処理中」に。対象外（完了済みなど）は据え置く。
+    setMediaList((prev) => markTargetsProcessing(prev, targets));
+
+    // ファイル1件完了ごとにバックエンドから届く進捗イベントを受ける Channel（#4）。
+    // onmessage 内では setMediaList の関数更新形を使い、stale closure（古い mediaList の
+    // キャプチャ）を避ける。Channel は invoke 解決後に GC されるので明示解除は不要。
+    const onProgress = new Channel<ProgressEvent>();
+    onProgress.onmessage = (event) => {
+      // 該当行のステータス／進捗をライブ更新（new_path/logs は完了後の最終マージで確定）。
+      setMediaList((prev) => applyProgressEvent(prev, event));
+      // 全体進捗はイベントの done を採用（並列でも単調増加・1..=total を網羅）。
+      setProgress((prev) =>
+        event.done > prev.done ? { done: event.done, total: event.total } : prev
+      );
+    };
 
     try {
       // backend は渡した media_list だけを処理し、各項目の status は見ない。
@@ -282,17 +310,22 @@ function App() {
         parallel: true,
         includeVideos: true,
         cleanupTemp: true,
+        onProgress,
       });
 
       setProcessResult(result);
 
       // 処理結果を反映。今回処理した targets のみ更新し、対象外（完了済みなど）は
-      // 据え置く（リトライで完了済みを再処理・誤 error 化しない）。
+      // 据え置く（リトライで完了済みを再処理・誤 error 化しない）。new_path/logs を確定値で
+      // 上書きし、ライブ進捗の暫定 status を最終結果へ揃える。
       setMediaList((prev) => mergeProcessResults(prev, targets, result.media));
     } catch (error) {
       console.error('Process error:', error);
       alert(`Process error: ${error}`);
     } finally {
+      // listener を解除して以後の送信を無視（処理失敗時に行が processing のまま残らないよう、
+      // 念のため onmessage を外す）。
+      onProgress.onmessage = () => {};
       setIsProcessing(false);
     }
   };
@@ -370,6 +403,8 @@ function App() {
       onProcessMedia={processMedia}
       onRetryFailed={retryFailedFiles}
       isProcessing={isProcessing}
+      progressDone={progress.done}
+      progressTotal={progress.total}
       mediaList={mediaList}
       processResult={processResult}
       table={table}
