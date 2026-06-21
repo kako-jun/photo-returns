@@ -69,7 +69,7 @@
 ### Phase 2: コア機能 ✅
 - EXIF 日付抽出
 - ファイルリネーム（YYYY-MM-DD_HH-MM-SS 形式）
-- ディレクトリ階層作成（YYYY/YYYYMM/YYYYMMDD）
+- ディレクトリ階層作成（YYYY/YYYY-MM/YYYY-MM-DD）
 - マルチフォーマット対応（画像10種、動画11種）
 - rayon による並列処理
 - 画像向き検出・修正
@@ -160,11 +160,12 @@
    - 連番を追加: `_01.ext`, `_02.ext`, `_03.ext`
    - `burst.rs` で設定可能
 
-2. **向き修正**
+2. **向き修正（ロスレス）**
    - EXIF orientation タグを読み取り
-   - 自動的に画像を正しい向きに回転
-   - 値 1, 3, 6, 8 に対応
-   - **処理後にEXIF Orientation=1にリセット**
+   - 値 1/3/6/8（回転）のみ対応。ミラー系 2/4/5/7 は非対応でスキップ＋ログ
+   - JPEG は turbojpeg(libjpeg-turbo) の DCT 領域変換で**無劣化**回転（EXIF/ICC を保持）。PNG 等は image クレート
+   - **処理後にEXIF Orientation=1にリセット**（date/GPS は保持したまま二重回転を防ぐ）
+   - 実装: `orientation::rotate_file_in_place` / `exif_orientation_to_degrees` / `is_mirror_orientation`
 
 3. **並列処理**
    - rayon によるマルチスレッドスキャン/処理

@@ -46,9 +46,6 @@ mp4 = "0.14"     # MP4/QuickTimeメタデータ読み取り
 img-parts = "0.3"  # JPEG/PNGメタデータ書き換え
 turbojpeg = "1.4.0"
 
-[dev-dependencies]
-# e2e 統合テスト（tests/）が写真フィクスチャを生成・検証するため
-image = "0.24"
-img-parts = "0.3"
-kamadak-exif = "0.6"  # 回転後に EXIF（Orientation 以外）が保全されることの検証用
+# 注: 統合テスト（tests/e2e_golden.rs）が使う image / img-parts / kamadak-exif は
+# すべて上記の通常依存にあり、統合テストからそのまま使えるため [dev-dependencies] は不要。
 
