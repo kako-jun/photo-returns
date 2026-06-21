@@ -59,7 +59,14 @@ jobs:
             patchelf \
             libssl-dev \
             libgtk-3-dev \
-            libayatana-appindicator3-dev
+            libayatana-appindicator3-dev \
+            pkg-config \
+            libturbojpeg0-dev
+
+      # NOTE(#7): macOS（aarch64+x86_64 ユニバーサル）と Windows の turbojpeg(libjpeg-turbo)
+      # native ビルドは未設定。macOS は brew jpeg-turbo が keg-only かつ x86_64 クロスで
+      # arch 不一致、Windows は nasm+cmake の vendor ビルドが要る。実機リリースで検証して
+      # から設定する（フォローアップ）。Linux リリースは上記 dep で動く。
 
       - name: Install frontend dependencies
         run: npm ci

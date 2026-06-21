@@ -650,27 +650,27 @@ fn process_media_inner(
                         format!("File copied successfully to: {}", target_path.display()),
                     );
 
-                    // 画像回転処理（rotation_modeに基づく）
+                    // 画像回転処理（rotation_mode に基づく・ロスレス）
                     if item.source.media_type == MediaType::Photo {
                         let rotation_mode =
                             item.overrides.rotation_mode.as_deref().unwrap_or("none");
 
                         if rotation_mode != "none" {
-                            // 回転角度を計算
+                            // 回転角度を計算（exif はミラー系 2/4/5/7 を skip + ログ）
                             let degrees = match rotation_mode {
-                                "exif" => {
-                                    if let Some(ori) = item.source.exif_orientation {
-                                        match ori {
-                                            1 => 0,
-                                            3 => 180,
-                                            6 => 90,
-                                            8 => 270,
-                                            _ => 0,
-                                        }
-                                    } else {
+                                "exif" => match item.source.exif_orientation {
+                                    Some(ori) if orientation::is_mirror_orientation(ori) => {
+                                        item.add_log(
+                                            LogLevel::Warning,
+                                            format!(
+                                                "Mirror orientation ({ori}) is not supported, skipping rotation"
+                                            ),
+                                        );
                                         0
                                     }
-                                }
+                                    Some(ori) => orientation::exif_orientation_to_degrees(ori),
+                                    None => 0,
+                                },
                                 "90" => 90,
                                 "180" => 180,
                                 "270" => 270,
@@ -680,54 +680,20 @@ fn process_media_inner(
                             if degrees != 0 {
                                 item.add_log(
                                     LogLevel::Info,
-                                    format!("Applying rotation: {degrees}°"),
+                                    format!("Applying lossless rotation: {degrees}°"),
                                 );
-
-                                match image::open(&target_path) {
-                                    Ok(img) => {
-                                        let rotated = match degrees {
-                                            90 => img.rotate90(),
-                                            180 => img.rotate180(),
-                                            270 => img.rotate270(),
-                                            _ => img,
-                                        };
-
-                                        match rotated.save(&target_path) {
-                                            Ok(_) => {
-                                                item.add_log(
-                                                    LogLevel::Info,
-                                                    "Image rotated and saved successfully",
-                                                );
-                                                item.derived.rotation_applied = true;
-
-                                                if let Err(e) = orientation::reset_exif_orientation(
-                                                    &target_path,
-                                                ) {
-                                                    item.add_log(
-                                                        LogLevel::Warning,
-                                                        format!(
-                                                            "Failed to reset EXIF orientation: {e}"
-                                                        ),
-                                                    );
-                                                } else {
-                                                    item.add_log(
-                                                        LogLevel::Info,
-                                                        "EXIF orientation reset to Normal (1)",
-                                                    );
-                                                }
-                                            }
-                                            Err(e) => {
-                                                item.add_log(
-                                                    LogLevel::Error,
-                                                    format!("Failed to save rotated image: {e}"),
-                                                );
-                                            }
-                                        }
+                                match orientation::rotate_file_in_place(&target_path, degrees) {
+                                    Ok(()) => {
+                                        item.derived.rotation_applied = true;
+                                        item.add_log(
+                                            LogLevel::Info,
+                                            "Image rotated losslessly (EXIF Orientation reset to 1)",
+                                        );
                                     }
                                     Err(e) => {
                                         item.add_log(
                                             LogLevel::Error,
-                                            format!("Failed to open image for rotation: {e}"),
+                                            format!("Failed to rotate image: {e}"),
                                         );
                                     }
                                 }

@@ -1,5 +1,5 @@
 /// 画像の向き検出・修正機能
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use exif::{In, Reader, Tag};
 use image::{self, DynamicImage};
 use img_parts::jpeg::Jpeg;
@@ -7,6 +7,7 @@ use img_parts::{Bytes, ImageEXIF};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use turbojpeg::{Transform, TransformOp};
 
 /// 画像の向き（EXIF Orientation値）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -232,6 +233,73 @@ pub fn reset_exif_orientation(image_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// EXIF Orientation 値がミラー系（2/4/5/7）かを判定する。
+///
+/// 現実のカメラ・スマホは回転（1/3/6/8）しか付けないため、ミラー系は非対応として
+/// スキップ＋ログ記録する（#7 仕様）。
+pub fn is_mirror_orientation(value: u32) -> bool {
+    matches!(value, 2 | 4 | 5 | 7)
+}
+
+/// EXIF Orientation 値を、正しい向きにするための時計回り回転角（度）へ写像する。
+///
+/// 対応するのは回転のみ（1=0° / 3=180° / 6=90° / 8=270°）。`1`（正常）・ミラー系・
+/// 不明値はすべて 0（回転なし）を返す。
+pub fn exif_orientation_to_degrees(value: u32) -> u32 {
+    match value {
+        3 => 180,
+        6 => 90,
+        8 => 270,
+        _ => 0, // 1（正常）/ ミラー系 / 不明
+    }
+}
+
+/// 画像ファイルをその場で `degrees`（90/180/270）だけロスレス回転する。
+///
+/// - JPEG は **turbojpeg**（libjpeg-turbo の DCT 領域変換）で無劣化回転する。`copy_none=false`
+///   で EXIF/ICC を保持するため日付・GPS は失われない。回転後にピクセルが物理的に回っているので
+///   `reset_exif_orientation` で Orientation を 1 に上書きし、ビューアでの二重回転を防ぐ。
+/// - JPEG 以外（PNG 等のロスレス形式）は `image` クレートで回転する。
+///
+/// `degrees` が 0 や非対応値なら何もしない。
+pub fn rotate_file_in_place(path: &Path, degrees: u32) -> Result<()> {
+    let op = match degrees {
+        90 => TransformOp::Rot90,
+        180 => TransformOp::Rot180,
+        270 => TransformOp::Rot270,
+        _ => return Ok(()),
+    };
+
+    let extension = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    if matches!(extension.as_str(), "jpg" | "jpeg") {
+        let bytes = fs::read(path).context("Failed to read JPEG for lossless rotation")?;
+        // perfect=false（既定）で非MCU境界でもエラーにせず標準ロスレス回転、
+        // copy_none=false（既定）で EXIF/ICC マーカーを出力へ引き継ぐ。
+        let transform = Transform::op(op);
+        let rotated = turbojpeg::transform(&transform, &bytes)
+            .map_err(|e| anyhow!("Lossless JPEG rotation failed: {e}"))?;
+        fs::write(path, rotated.as_ref()).context("Failed to write rotated JPEG")?;
+        // コピーされた古い Orientation 値を 1（Normal）へ上書きする。
+        reset_exif_orientation(path)?;
+    } else {
+        let img = image::open(path).context("Failed to open image for rotation")?;
+        let rotated = match degrees {
+            90 => img.rotate90(),
+            180 => img.rotate180(),
+            270 => img.rotate270(),
+            _ => img,
+        };
+        rotated.save(path).context("Failed to save rotated image")?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,5 +325,71 @@ mod tests {
         let result = correct_orientation(img.clone(), Orientation::Rotate90CW);
         // 90度回転すると、幅と高さが入れ替わる
         assert_eq!(result.dimensions(), (100, 100));
+    }
+
+    #[test]
+    fn mirror_orientations_are_detected() {
+        // ミラー系（2/4/5/7）は非対応 → true
+        for v in [2, 4, 5, 7] {
+            assert!(is_mirror_orientation(v), "{v} should be mirror");
+        }
+        // 回転系（1/3/6/8）と不明値は false
+        for v in [1, 3, 6, 8, 0, 99] {
+            assert!(!is_mirror_orientation(v), "{v} should not be mirror");
+        }
+    }
+
+    #[test]
+    fn exif_orientation_maps_to_clockwise_degrees() {
+        // 対応値 1/3/6/8
+        assert_eq!(exif_orientation_to_degrees(1), 0);
+        assert_eq!(exif_orientation_to_degrees(3), 180);
+        assert_eq!(exif_orientation_to_degrees(6), 90);
+        assert_eq!(exif_orientation_to_degrees(8), 270);
+        // ミラー系・不明は回転しない
+        assert_eq!(exif_orientation_to_degrees(2), 0);
+        assert_eq!(exif_orientation_to_degrees(5), 0);
+        assert_eq!(exif_orientation_to_degrees(99), 0);
+    }
+
+    /// テスト用に MCU 境界（16x16）に整列した JPEG を temp に書き出す。
+    fn write_test_jpeg(name: &str, width: u32, height: u32) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("photo_returns_tz_{name}.jpg"));
+        let img = DynamicImage::new_rgb8(width, height);
+        img.save(&path).expect("save test jpeg");
+        path
+    }
+
+    #[test]
+    fn lossless_rotate_jpeg_90_swaps_dimensions() {
+        let path = write_test_jpeg("rot90", 32, 16);
+        rotate_file_in_place(&path, 90).expect("lossless rotate 90");
+        // 90度回転で幅と高さが入れ替わる。再デコードできる＝有効な JPEG。
+        let dims = image::open(&path)
+            .expect("reopen rotated jpeg")
+            .dimensions();
+        assert_eq!(dims, (16, 32));
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn lossless_rotate_jpeg_180_keeps_dimensions() {
+        let path = write_test_jpeg("rot180", 32, 16);
+        rotate_file_in_place(&path, 180).expect("lossless rotate 180");
+        let dims = image::open(&path)
+            .expect("reopen rotated jpeg")
+            .dimensions();
+        assert_eq!(dims, (32, 16));
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn rotate_zero_degrees_is_noop() {
+        let path = write_test_jpeg("rot0", 32, 16);
+        let before = fs::read(&path).unwrap();
+        rotate_file_in_place(&path, 0).expect("noop");
+        let after = fs::read(&path).unwrap();
+        assert_eq!(before, after, "0度はファイルを変更しない");
+        let _ = fs::remove_file(&path);
     }
 }
