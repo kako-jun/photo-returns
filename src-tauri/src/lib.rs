@@ -24,31 +24,23 @@ fn scan_media(
 }
 
 /// メディアファイルをリネームして出力ディレクトリに整理（再スキャンあり版、後方互換用）
-// Tauri コマンドの公開引数がそのまま並ぶため引数が多い。API 互換のため統合せず lint のみ抑止する。
-#[allow(clippy::too_many_arguments)]
+//
+// 処理オプションは `ProcessOptions` を正本とし、コマンド境界でも構造体のまま受け取る。
+// 以前はフィールドをフラットな引数に展開して即再構築していたが、option セットの定義が
+// 二重化し clippy::too_many_arguments を抑止する羽目になっていた。構造体で受けることで
+// 正本を 1 箇所に集約し、抑止属性を不要にする（#8）。`ProcessOptions` は Serialize/Deserialize
+// 済みのため wire 契約は `{ inputDir, outputDir, options: { ... } }`。トップレベル引数は Tauri が
+// camelCase 化するが、ネストした `options` の内部キーは ProcessOptions の serde 名そのまま＝
+// snake_case（`backup_dir` / `include_videos` / `timezone_offset` / `cleanup_temp` /
+// `auto_correct_orientation`）で渡す必要がある（rename_all 無し。photo_core::tests で固定済み）。
 #[tauri::command]
 fn process_media(
     input_dir: String,
     output_dir: String,
-    backup_dir: Option<String>,
-    include_videos: bool,
-    parallel: bool,
-    timezone_offset: Option<i32>,
-    cleanup_temp: bool,
-    auto_correct_orientation: bool,
+    options: ProcessOptions,
 ) -> Result<ProcessResult, String> {
     let input_path = PathBuf::from(input_dir);
     let output_path = PathBuf::from(output_dir);
-    let backup_path = backup_dir.map(PathBuf::from);
-
-    let options = ProcessOptions {
-        parallel,
-        include_videos,
-        backup_dir: backup_path,
-        timezone_offset,
-        cleanup_temp,
-        auto_correct_orientation,
-    };
 
     photo_core::process_media(&input_path, &output_path, &options).map_err(|e| e.to_string())
 }

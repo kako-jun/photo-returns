@@ -755,4 +755,37 @@ mod tests {
             "MediaInfo の top-level キーは 23 個のはず"
         );
     }
+
+    /// フロントエンド契約の機械検証:
+    /// `process_media` コマンド（lib.rs）は `options: ProcessOptions` を構造体のまま受け取る。
+    /// ProcessOptions には `#[serde(rename_all = ...)]` が無いため、wire 上のキーは snake_case。
+    /// Tauri がトップレベル引数を camelCase 化するのは `input_dir`→`inputDir` 等だけで、
+    /// ネストした `options` の内部キーには適用されない。将来このコマンドを invoke で配線する際は
+    /// `options: { backup_dir, include_videos, ... }` と snake_case で渡す必要がある。
+    /// rename_all を足すと黙ってこの契約が変わるので、それを CI で射抜く。
+    #[test]
+    fn process_options_wire_keys_are_snake_case() {
+        let value =
+            serde_json::to_value(ProcessOptions::default()).expect("serialize ProcessOptions");
+        let obj = value
+            .as_object()
+            .expect("ProcessOptions must serialize to a JSON object");
+
+        let actual: BTreeSet<&str> = obj.keys().map(|k| k.as_str()).collect();
+        let expected: BTreeSet<&str> = [
+            "parallel",
+            "backup_dir",
+            "include_videos",
+            "timezone_offset",
+            "cleanup_temp",
+            "auto_correct_orientation",
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(
+            actual, expected,
+            "ProcessOptions の JSON キーが snake_case 契約と一致しません（rename_all を足すとフロント配線が壊れる）"
+        );
+    }
 }

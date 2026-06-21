@@ -167,7 +167,6 @@ git commit --no-verify -m "message"
 
 - `create_photo_to_group_map` 関数が未使用
 - `duration_ms` フィールドが未使用
-- `process_media` 関数の引数が8個（推奨7個以下）
 
 ### TypeScript
 
