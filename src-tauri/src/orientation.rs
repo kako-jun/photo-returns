@@ -150,8 +150,10 @@ pub fn reset_exif_orientation(image_path: &Path) -> Result<()> {
             return Ok(());
         }
 
-        // TIFFヘッダー以降を取得
-        let tiff_data = &exif_data[6..];
+        // img-parts の jpeg.exif() は "Exif\0\0"(6バイト)プレフィックスを既に剥がした
+        // TIFF データを返す（segment.rs の slice(EXIF_DATA_PREFIX.len()..)）。
+        // よって exif_data の先頭がそのまま TIFF ヘッダー（"II"/"MM"）になる。
+        let tiff_data = &exif_data[..];
 
         // バイトオーダーを確認（"II" = Little Endian, "MM" = Big Endian）
         if tiff_data.len() < 2 {
@@ -177,11 +179,11 @@ pub fn reset_exif_orientation(image_path: &Path) -> Result<()> {
         };
 
         // TIFFデータ内でOrientationタグを検索
-        // modified_data は exif_data（EXIFヘッダー6バイト含む）のコピー。
-        // tiff_data = &exif_data[6..] なので、tiff_data の index i は
-        // modified_data の index (6 + i) に対応する。
+        // modified_data は exif_data（= TIFF データそのもの）のコピー。
+        // tiff_data = &exif_data[..] なので、tiff_data の index i は
+        // modified_data の index i にそのまま対応する。
         // IFDエントリ構造: タグ(2) + 型(2) + カウント(4) + 値/オフセット(4)
-        // 値フィールドは エントリ先頭から 8バイト後ろ → modified_data[(6 + i + 8)..]
+        // 値フィールドは エントリ先頭から 8バイト後ろ → modified_data[(i + 8)..]
         let mut found = false;
         for i in 0..tiff_data.len().saturating_sub(12) {
             if tiff_data[i..i + 2] == orientation_bytes {
@@ -202,8 +204,8 @@ pub fn reset_exif_orientation(image_path: &Path) -> Result<()> {
                 }
 
                 // 値フィールドの位置: modified_data 上の絶対オフセット
-                // = EXIFヘッダー(6) + tiff_data内のエントリ先頭(i) + タグ(2) + 型(2) + カウント(4)
-                let value_offset = 6 + i + 8;
+                // = tiff_data内のエントリ先頭(i) + タグ(2) + 型(2) + カウント(4)
+                let value_offset = i + 8;
 
                 if value_offset + 2 <= modified_data.len() {
                     // 値を1（Normal）に設定（SHORT型なので2バイト）
@@ -390,6 +392,61 @@ mod tests {
         rotate_file_in_place(&path, 0).expect("noop");
         let after = fs::read(&path).unwrap();
         assert_eq!(before, after, "0度はファイルを変更しない");
+        let _ = fs::remove_file(&path);
+    }
+
+    /// Orientation=6 の実 EXIF タグを持つ JPEG を作るヘルパー。
+    /// 最小の TIFF（II / IFD0 に Orientation=SHORT=6 の1エントリ）を img-parts で付与する。
+    fn write_jpeg_with_orientation(name: &str, value: u16) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("photo_returns_ori_{name}.jpg"));
+        DynamicImage::new_rgb8(16, 16).save(&path).unwrap();
+        let mut jpeg = Jpeg::from_bytes(fs::read(&path).unwrap().into()).unwrap();
+        let [vlo, vhi] = value.to_le_bytes();
+        let tiff: Vec<u8> = vec![
+            0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00, // "II", 42, IFD0 offset = 8
+            0x01, 0x00, // エントリ数 1
+            0x12, 0x01, // タグ 0x0112 (Orientation) LE
+            0x03, 0x00, // 型 SHORT (3)
+            0x01, 0x00, 0x00, 0x00, // カウント 1
+            vlo, vhi, 0x00, 0x00, // 値（インライン）
+            0x00, 0x00, 0x00, 0x00, // 次 IFD = 0
+        ];
+        jpeg.set_exif(Some(Bytes::from(tiff)));
+        fs::write(&path, jpeg.encoder().bytes()).unwrap();
+        path
+    }
+
+    #[test]
+    fn reset_exif_orientation_actually_sets_normal() {
+        let path = write_jpeg_with_orientation("reset6", 6);
+        // 前提: 付与した Orientation=6 が読める（=テスト土台が正しい）
+        assert_eq!(
+            get_orientation(&path).unwrap().orientation,
+            Orientation::Rotate90CW,
+            "テスト用 JPEG に Orientation=6 が付いているはず"
+        );
+
+        reset_exif_orientation(&path).expect("reset");
+
+        // 検証: リセット後は Normal(1)。img-parts の [6..] バグ時はここが 6 のまま落ちる。
+        assert_eq!(
+            get_orientation(&path).unwrap().orientation,
+            Orientation::Normal,
+            "reset_exif_orientation 後は Orientation=1 でなければならない"
+        );
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn rotate_jpeg_with_orientation_resets_to_normal() {
+        // ロスレス回転の golden path: 回転後に EXIF Orientation が 1 になる（二重回転防止）。
+        let path = write_jpeg_with_orientation("rot_reset8", 8);
+        rotate_file_in_place(&path, 270).expect("lossless rotate");
+        assert_eq!(
+            get_orientation(&path).unwrap().orientation,
+            Orientation::Normal,
+            "回転後は EXIF Orientation=1 でなければならない"
+        );
         let _ = fs::remove_file(&path);
     }
 }

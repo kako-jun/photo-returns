@@ -685,10 +685,7 @@ fn process_media_inner(
                                 match orientation::rotate_file_in_place(&target_path, degrees) {
                                     Ok(()) => {
                                         item.derived.rotation_applied = true;
-                                        item.add_log(
-                                            LogLevel::Info,
-                                            "Image rotated losslessly (EXIF Orientation reset to 1)",
-                                        );
+                                        item.add_log(LogLevel::Info, "Image rotated losslessly");
                                     }
                                     Err(e) => {
                                         item.add_log(
