@@ -390,16 +390,17 @@ function App() {
   };
 
   // 現在の index を1つ進める。末尾なら閉じる。
+  // setState の updater 内で別の setState を呼ばない（updater は純粋に保つ）。
+  // 1イベント1回しか呼ばれないため、スナップショットの index/length 参照で十分。
   const advanceOrientation = () => {
-    setOrientationIndex((prev) => {
-      const total = orientationQueuePaths?.length ?? 0;
-      if (prev + 1 >= total) {
-        // 末尾に達したので閉じる（queue はクリア）。
-        setOrientationQueuePaths(null);
-        return 0;
-      }
-      return prev + 1;
-    });
+    const total = orientationQueuePaths?.length ?? 0;
+    if (orientationIndex + 1 >= total) {
+      // 末尾に達したので閉じる（queue はクリア）。
+      setOrientationQueuePaths(null);
+      setOrientationIndex(0);
+    } else {
+      setOrientationIndex((prev) => prev + 1);
+    }
   };
 
   // 確定: 現在の対象写真の rotation_mode を絶対角に設定 → auto-advance。
@@ -420,6 +421,14 @@ function App() {
     orientationQueuePaths != null
       ? (mediaList.find((m) => m.original_path === orientationQueuePaths[orientationIndex]) ?? null)
       : null;
+
+  // セーフガード: キューは開いているのに対象 MediaInfo が引けない（mediaList から消えた等）場合、
+  // モーダルが透明なまま操作不能で残らないよう自動で閉じる。通常フローでは起きない。
+  useEffect(() => {
+    if (orientationQueuePaths != null && orientationCurrentMedia == null) {
+      closeOrientationConfirm();
+    }
+  }, [orientationQueuePaths, orientationCurrentMedia]);
 
   // Use custom hook for table columns
   const columns = useMediaTableColumns({
