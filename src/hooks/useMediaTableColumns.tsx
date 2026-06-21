@@ -622,6 +622,10 @@ export function useMediaTableColumns({
                   src={assetUrl}
                   alt="rotated preview"
                   style={{
+                    // 生ピクセルに対して回転させる（バックエンドの物理回転と一致）。
+                    // imageOrientation:none を付けないと、ブラウザの EXIF 自動回転に
+                    // CSS rotate が重なって二重回転になる（#7）。
+                    imageOrientation: 'none',
                     transform: `rotate(${degrees}deg)`,
                     width: '56px',
                     height: '56px',

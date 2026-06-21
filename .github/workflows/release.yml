@@ -59,7 +59,23 @@ jobs:
             patchelf \
             libssl-dev \
             libgtk-3-dev \
-            libayatana-appindicator3-dev
+            libayatana-appindicator3-dev \
+            nasm
+
+      # turbojpeg-sys は同梱 libjpeg-turbo(>=3.0) を cmake で vendor ビルドする（SIMD に nasm 必須）。
+      # cmake は各 runner に既存。macOS/Windows にも nasm を入れて vendor ビルドを成立させる。
+      - name: Install nasm (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: brew install nasm
+
+      - name: Install nasm (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: choco install nasm -y
+        shell: pwsh
+
+      # NOTE(#7): macOS は aarch64+x86_64 ユニバーサルのため、x86_64 スライスの vendor ビルド
+      # （クロス）は未検証。Windows も choco nasm の PATH 反映を含め未検証。次回リリースで
+      # 各 OS の成果物を実機確認すること（Linux は本 CI と同じ nasm vendor 経路で確認済み）。
 
       - name: Install frontend dependencies
         run: npm ci

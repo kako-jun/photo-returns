@@ -31,10 +31,26 @@
 **バックエンド:**
 - Rust（Tauri 2.0）
 - kamadak-exif（EXIF読み取り）
-- image クレート（画像処理・回転）
+- image クレート（画像処理・PNG等の回転）
+- turbojpeg（JPEG のロスレス回転 / libjpeg-turbo の DCT 領域変換）
 - img-parts（JPEG EXIF書き換え）
 - chrono + chrono-tz（日時処理）
 - rayon（並列処理）
+
+**ローカルビルドの前提（turbojpeg / libjpeg-turbo）:**
+
+`turbojpeg` crate は libjpeg-turbo にリンクするため、ビルド時に検出が必要。
+
+- Linux: `sudo apt-get install -y pkg-config libturbojpeg0-dev`（pkg-config が自動検出）
+- macOS（Homebrew・keg-only）:
+  ```sh
+  brew install jpeg-turbo
+  export TURBOJPEG_SOURCE=explicit
+  export TURBOJPEG_LIB_DIR=/opt/homebrew/opt/jpeg-turbo/lib       # Intel は /usr/local/opt/...
+  export TURBOJPEG_INCLUDE_PATH=/opt/homebrew/opt/jpeg-turbo/include
+  ```
+  （または `export PKG_CONFIG_PATH=/opt/homebrew/opt/jpeg-turbo/lib/pkgconfig` でも可）
+- Windows / 各OSのリリースビルド（3OS）の native dep 設定はフォローアップ（#7 コメント参照）
 
 **重要な決定: なぜ Tauri 2.0？**
 - モバイル含むクロスプラットフォーム対応（Android/iOS）
