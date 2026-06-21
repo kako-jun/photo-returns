@@ -17,8 +17,10 @@ import {
   markTargetsProcessing,
 } from './lib/processResults';
 import { MainLayout } from './components/MainLayout';
+import { OrientationConfirm } from './components/OrientationConfirm';
 import { useMediaTableColumns } from './hooks/useMediaTableColumns';
 import { getStorageValue, saveStorage } from './storage';
+import { selectOrientationQueue, type AbsoluteRotationMode } from './lib/orientationQueue';
 
 function App() {
   const [isDark, setIsDark] = useState(() => {
@@ -48,6 +50,11 @@ function App() {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<ExpandedState>({});
   const [showScrollToTop, setShowScrollToTop] = useState(false);
+  // 方向確認ポップアップ（#7 Phase C）。起動時に対象キューを original_path で固定し、
+  // index を進めて auto-advance する。rotation_mode 更新がキューを乱さないよう、
+  // キューは「写真の参照」ではなくパス列で持つ（mediaList は再生成されるため）。
+  const [orientationQueuePaths, setOrientationQueuePaths] = useState<string[] | null>(null);
+  const [orientationIndex, setOrientationIndex] = useState(0);
 
   // 全体のデフォルト設定（静止画と動画で別）
   const [defaultPhotoDateSource, setDefaultPhotoDateSource] = useState<
@@ -365,6 +372,64 @@ function App() {
     await processMedia(errorFiles);
   };
 
+  // 方向確認ポップアップ（#7 Phase C）の対象件数。ボタン表示・activ 化に使う。
+  const orientationCandidateCount = selectOrientationQueue(mediaList).length;
+
+  // ポップアップ起動: 現在の mediaList から対象を抽出し、original_path 列で固定する。
+  // 自動起動はしない（安全側）。scan 後にユーザーがボタンで明示起動する。
+  const startOrientationConfirm = () => {
+    const queue = selectOrientationQueue(mediaList);
+    if (queue.length === 0) return;
+    setOrientationQueuePaths(queue.map((m) => m.original_path));
+    setOrientationIndex(0);
+  };
+
+  const closeOrientationConfirm = () => {
+    setOrientationQueuePaths(null);
+    setOrientationIndex(0);
+  };
+
+  // 現在の index を1つ進める。末尾なら閉じる。
+  // setState の updater 内で別の setState を呼ばない（updater は純粋に保つ）。
+  // 1イベント1回しか呼ばれないため、スナップショットの index/length 参照で十分。
+  const advanceOrientation = () => {
+    const total = orientationQueuePaths?.length ?? 0;
+    if (orientationIndex + 1 >= total) {
+      // 末尾に達したので閉じる（queue はクリア）。
+      setOrientationQueuePaths(null);
+      setOrientationIndex(0);
+    } else {
+      setOrientationIndex((prev) => prev + 1);
+    }
+  };
+
+  // 確定: 現在の対象写真の rotation_mode を絶対角に設定 → auto-advance。
+  const confirmOrientation = (rotationMode: AbsoluteRotationMode) => {
+    const path = orientationQueuePaths?.[orientationIndex];
+    if (path) {
+      setMediaList((prev) =>
+        prev.map((item) =>
+          item.original_path === path ? { ...item, rotation_mode: rotationMode } : item
+        )
+      );
+    }
+    advanceOrientation();
+  };
+
+  // 現在表示すべき対象の MediaInfo を mediaList から引き当てる（rotation_mode 反映後も最新）。
+  const orientationCurrentMedia =
+    orientationQueuePaths != null
+      ? (mediaList.find((m) => m.original_path === orientationQueuePaths[orientationIndex]) ?? null)
+      : null;
+
+  // セーフガード: キューは開いているのに対象 MediaInfo が引けない（mediaList から消えた等）場合、
+  // モーダルが透明なまま操作不能で残らないよう自動で閉じる。通常フローでは起きない。
+  useEffect(() => {
+    if (orientationQueuePaths != null && orientationCurrentMedia == null) {
+      closeOrientationConfirm();
+    }
+  }, [orientationQueuePaths, orientationCurrentMedia]);
+
   // Use custom hook for table columns
   const columns = useMediaTableColumns({
     setLightboxIndex,
@@ -385,42 +450,57 @@ function App() {
   });
 
   return (
-    <MainLayout
-      isDark={isDark}
-      onToggleDarkMode={toggleDarkMode}
-      inputDir={inputDir}
-      outputDir={outputDir}
-      onSelectInputDir={selectInputDir}
-      onSelectOutputDir={selectOutputDir}
-      defaultPhotoDateSource={defaultPhotoDateSource}
-      defaultPhotoTimezoneOffset={defaultPhotoTimezoneOffset}
-      defaultPhotoRotationMode={defaultPhotoRotationMode}
-      onPhotoDateSourceChange={setDefaultPhotoDateSource}
-      onPhotoTimezoneOffsetChange={setDefaultPhotoTimezoneOffset}
-      onPhotoRotationModeChange={setDefaultPhotoRotationMode}
-      defaultVideoDateSource={defaultVideoDateSource}
-      defaultVideoTimezoneOffset={defaultVideoTimezoneOffset}
-      defaultVideoRotationMode={defaultVideoRotationMode}
-      onVideoDateSourceChange={setDefaultVideoDateSource}
-      onVideoTimezoneOffsetChange={setDefaultVideoTimezoneOffset}
-      onVideoRotationModeChange={setDefaultVideoRotationMode}
-      onScanMedia={scanMedia}
-      isScanning={isScanning}
-      onProcessMedia={processMedia}
-      onRetryFailed={retryFailedFiles}
-      isProcessing={isProcessing}
-      progressDone={progress.done}
-      progressTotal={progress.total}
-      mediaList={mediaList}
-      processResult={processResult}
-      table={table}
-      columns={columns}
-      lightboxIndex={lightboxIndex}
-      onSetLightboxIndex={setLightboxIndex}
-      showScrollToTop={showScrollToTop}
-      onScrollToTop={scrollToTop}
-      isMockMode={MOCK_ENABLED}
-    />
+    <>
+      <MainLayout
+        isDark={isDark}
+        onToggleDarkMode={toggleDarkMode}
+        inputDir={inputDir}
+        outputDir={outputDir}
+        onSelectInputDir={selectInputDir}
+        onSelectOutputDir={selectOutputDir}
+        defaultPhotoDateSource={defaultPhotoDateSource}
+        defaultPhotoTimezoneOffset={defaultPhotoTimezoneOffset}
+        defaultPhotoRotationMode={defaultPhotoRotationMode}
+        onPhotoDateSourceChange={setDefaultPhotoDateSource}
+        onPhotoTimezoneOffsetChange={setDefaultPhotoTimezoneOffset}
+        onPhotoRotationModeChange={setDefaultPhotoRotationMode}
+        defaultVideoDateSource={defaultVideoDateSource}
+        defaultVideoTimezoneOffset={defaultVideoTimezoneOffset}
+        defaultVideoRotationMode={defaultVideoRotationMode}
+        onVideoDateSourceChange={setDefaultVideoDateSource}
+        onVideoTimezoneOffsetChange={setDefaultVideoTimezoneOffset}
+        onVideoRotationModeChange={setDefaultVideoRotationMode}
+        onScanMedia={scanMedia}
+        isScanning={isScanning}
+        onProcessMedia={processMedia}
+        onRetryFailed={retryFailedFiles}
+        isProcessing={isProcessing}
+        progressDone={progress.done}
+        progressTotal={progress.total}
+        mediaList={mediaList}
+        processResult={processResult}
+        table={table}
+        columns={columns}
+        lightboxIndex={lightboxIndex}
+        onSetLightboxIndex={setLightboxIndex}
+        showScrollToTop={showScrollToTop}
+        onScrollToTop={scrollToTop}
+        isMockMode={MOCK_ENABLED}
+        orientationCandidateCount={orientationCandidateCount}
+        onStartOrientationConfirm={startOrientationConfirm}
+      />
+      {orientationQueuePaths != null && (
+        <OrientationConfirm
+          current={orientationCurrentMedia}
+          index={orientationIndex}
+          total={orientationQueuePaths.length}
+          onConfirm={confirmOrientation}
+          onSkip={advanceOrientation}
+          onClose={closeOrientationConfirm}
+          isMockMode={MOCK_ENABLED}
+        />
+      )}
+    </>
   );
 }
 
