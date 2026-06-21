@@ -10,6 +10,7 @@ import {
 import './App.css';
 import { MOCK_ENABLED, mockMediaList, mockProcessResult } from './mock-data';
 import type { MediaInfo, ProcessResult } from './types';
+import { mergeProcessResults, selectRetryTargets } from './lib/processResults';
 import { MainLayout } from './components/MainLayout';
 import { useMediaTableColumns } from './hooks/useMediaTableColumns';
 import { getStorageValue, saveStorage } from './storage';
@@ -216,7 +217,9 @@ function App() {
   };
 
   // 処理実行
-  const processMedia = async () => {
+  // itemsToProcess を渡すとそのサブセットのみ処理する（リトライ時に失敗ファイルだけを対象にする）。
+  // 省略時は全件処理（初回実行）。
+  const processMedia = async (itemsToProcess?: MediaInfo[]) => {
     if (!inputDir || !outputDir) {
       alert('Please select both input and output directories');
       return;
@@ -224,6 +227,11 @@ function App() {
 
     if (mediaList.length === 0) {
       alert('No media files to process. Please scan first.');
+      return;
+    }
+
+    const targets = itemsToProcess ?? mediaList;
+    if (targets.length === 0) {
       return;
     }
 
@@ -266,7 +274,7 @@ function App() {
 
     try {
       const result = await invoke<ProcessResult>('process_media_with_settings', {
-        mediaList,
+        mediaList: targets,
         outputDir,
         backupDir: null,
         parallel: true,
@@ -276,24 +284,9 @@ function App() {
 
       setProcessResult(result);
 
-      // 処理結果を反映
-      // Rust から返る original_path はプラットフォーム依存のセパレータを持つ場合があるため、
-      // スラッシュ統一後に比較する（Windowsでの \\ vs / 問題を回避）
-      const normalizeForCompare = (p: string) => p.replace(/\\/g, '/');
-      const updatedMedia = mediaList.map((item) => {
-        const normalizedItem = normalizeForCompare(item.original_path);
-        const processed = result.media.find(
-          (m: MediaInfo) => normalizeForCompare(m.original_path) === normalizedItem
-        );
-        return {
-          ...item,
-          progress: 100,
-          status: processed?.new_path ? ('completed' as const) : ('error' as const),
-          new_path: processed?.new_path || '',
-        };
-      });
-
-      setMediaList(updatedMedia);
+      // 処理結果を反映。今回処理した targets のみ更新し、対象外（完了済みなど）は
+      // 据え置く（リトライで完了済みを再処理・誤 error 化しない）。
+      setMediaList((prev) => mergeProcessResults(prev, targets, result.media));
     } catch (error) {
       console.error('Process error:', error);
       alert(`Process error: ${error}`);
@@ -304,7 +297,7 @@ function App() {
 
   // エラーファイルのみ再処理
   const retryFailedFiles = async () => {
-    const errorFiles = mediaList.filter((item) => item.status === 'error');
+    const errorFiles = selectRetryTargets(mediaList);
 
     if (errorFiles.length === 0) {
       alert('No failed files to retry');
@@ -327,8 +320,8 @@ function App() {
       )
     );
 
-    // 再処理実行
-    await processMedia();
+    // 失敗ファイルのみを再処理（完了済みは対象外）
+    await processMedia(errorFiles);
   };
 
   // Use custom hook for table columns

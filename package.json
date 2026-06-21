@@ -18,7 +18,8 @@
     "format:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml",
     "format:rust:check": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
     "lint-format:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml && cargo clippy --manifest-path src-tauri/Cargo.toml",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test": "vitest run"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [
@@ -58,6 +59,7 @@
     "prettier-plugin-tailwindcss": "^0.7.1",
     "tailwindcss": "^4.1.16",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^3.2.6"
   }
 }
