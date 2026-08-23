@@ -356,7 +356,7 @@
 }
 
 .checkbox-hardware:checked {
-  background: linear-gradient(180deg, #1a2a1a 0%, #1e321e 40%, #223a22 100%);
+  background: linear-gradient(180deg, var(--led-dim) 0%, #1e321e 40%, #223a22 100%);
   border-color: #2a8a2a;
 }
 
