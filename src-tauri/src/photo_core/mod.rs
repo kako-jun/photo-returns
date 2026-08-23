@@ -192,6 +192,10 @@ pub struct ProcessResult {
     /// `process_media_with_list` / `process_media_with_list_progress` は事前スキャン済みの
     /// リストを受け取るだけで自身は scan しないため常に 0。scan から行う `process_media` のみ
     /// scan 結果の `ExcludedSummary::total` を反映する。
+    ///
+    /// GUI（`process_media_with_settings` 経由）は事前スキャン済みリストを処理する経路のため
+    /// **常に 0**。GUI が除外件数を表示したい場合はこのフィールドではなく、scan 時に
+    /// 受け取った `ScanOutcome.excluded` を見ること（`src/App.tsx` の `excludedSummary` 参照）。
     pub excluded_files: usize,
 }
 
