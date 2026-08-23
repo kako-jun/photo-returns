@@ -33,12 +33,13 @@ export default [
         HTMLSelectElement: 'readonly',
         HTMLAnchorElement: 'readonly',
         HTMLButtonElement: 'readonly',
+        Storage: 'readonly',
         React: 'readonly',
       },
     },
     plugins: {
       '@typescript-eslint': tsPlugin,
-      'react': reactPlugin,
+      react: reactPlugin,
       'react-hooks': reactHooksPlugin,
     },
     rules: {
