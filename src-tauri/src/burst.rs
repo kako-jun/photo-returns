@@ -211,4 +211,38 @@ mod tests {
 
         assert_eq!(groups.len(), 0); // min_count=3なのでグループなし
     }
+
+    /// #29 の判断メモ: `photo_core::dating::build_stem_no_date_ignores_burst_index` は
+    /// 「date=None なのに burst_index=Some」という組み合わせが `build_stem` 単体としては
+    /// 到達可能であることを pin している。この組み合わせが実際のパイプラインで到達不能なのは
+    /// `scan_media` が burst_index を `detect_burst_groups` の返す `photo_indices` からしか
+    /// 割り当てないためであり、その根拠はここ（`dates` に混ざる `None` がどの
+    /// `BurstGroup.photo_indices` にも一切現れないこと）にある。
+    #[test]
+    fn none_dated_entries_are_never_included_in_any_group() {
+        let base_time = Utc::now().with_timezone(&Local);
+
+        // 日付ありのバースト適格写真（0,1,2）の直後に日付なし（3）、続けてもう1グループ（4,5,6）。
+        let dates = vec![
+            Some(base_time),
+            Some(base_time + Duration::seconds(1)),
+            Some(base_time + Duration::seconds(2)),
+            None, // 日付なし写真（EXIF/ファイル名/作成日時いずれも取れなかった想定）
+            Some(base_time + Duration::seconds(10)),
+            Some(base_time + Duration::seconds(11)),
+            Some(base_time + Duration::seconds(12)),
+        ];
+
+        let config = BurstDetectorConfig::default();
+        let groups = detect_burst_groups(&dates, &config);
+
+        assert_eq!(groups.len(), 2, "日付ありの2グループが検出されるはず");
+        for group in &groups {
+            assert!(
+                !group.photo_indices.contains(&3),
+                "日付なしのインデックス3はどのグループにも含まれてはいけない: {:?}",
+                group.photo_indices
+            );
+        }
+    }
 }

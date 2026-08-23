@@ -388,8 +388,14 @@ mod tests {
     }
 
     /// テスト用に MCU 境界（16x16）に整列した JPEG を temp に書き出す。
+    ///
+    /// ファイル名にはプロセスIDを含める。`cargo test` の別プロセス（`--lib` と統合テスト
+    /// バイナリ、あるいは並行実行された2つの `cargo test` 呼び出し）が同時に同じ固定名へ
+    /// 書き込み/削除を行うと、一方が書いている最中にもう一方が消してテストが flaky になる
+    /// （リポジトリ内の他の一時ファイルヘルパーは全て `std::process::id()` を含めている慣習に揃える）。
     fn write_test_jpeg(name: &str, width: u32, height: u32) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!("photo_returns_tz_{name}.jpg"));
+        let pid = std::process::id();
+        let path = std::env::temp_dir().join(format!("photo_returns_tz_{name}_{pid}.jpg"));
         let img = DynamicImage::new_rgb8(width, height);
         img.save(&path).expect("save test jpeg");
         path
@@ -431,7 +437,8 @@ mod tests {
     /// Orientation=6 の実 EXIF タグを持つ JPEG を作るヘルパー。
     /// 最小の TIFF（II / IFD0 に Orientation=SHORT=6 の1エントリ）を img-parts で付与する。
     fn write_jpeg_with_orientation(name: &str, value: u16) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!("photo_returns_ori_{name}.jpg"));
+        let pid = std::process::id();
+        let path = std::env::temp_dir().join(format!("photo_returns_ori_{name}_{pid}.jpg"));
         DynamicImage::new_rgb8(16, 16).save(&path).unwrap();
         let mut jpeg = Jpeg::from_bytes(fs::read(&path).unwrap().into()).unwrap();
         let [vlo, vhi] = value.to_le_bytes();

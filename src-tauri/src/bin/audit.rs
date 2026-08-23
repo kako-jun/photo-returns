@@ -43,6 +43,8 @@ fn main() {
         cleanup_temp: false,
         auto_correct_orientation: false,
         exclude_system_artifacts: true,
+        provenance_tag: None,
+        provenance_from_folder: false,
     };
 
     for input in args.iter().skip(1) {

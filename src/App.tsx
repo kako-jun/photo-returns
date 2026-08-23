@@ -47,6 +47,15 @@ function App() {
     const stored = getStorageValue('excludeSystemArtifacts');
     return stored ?? true;
   });
+  // 由来タグの明示ラベル（#29）。非空なら全ファイルの出力名にこのタグを使う。既定は空
+  // （タグなし）。
+  const [provenanceTag, setProvenanceTagState] = useState<string>(() => {
+    return getStorageValue('provenanceTag') ?? '';
+  });
+  // ラベル未指定時にフォルダ名へフォールバックするか（#29）。既定 OFF。
+  const [provenanceFromFolder, setProvenanceFromFolderState] = useState<boolean>(() => {
+    return getStorageValue('provenanceFromFolder') ?? false;
+  });
   const [mediaList, setMediaList] = useState<MediaInfo[]>(MOCK_ENABLED ? mockMediaList : []);
   const [isScanning, setIsScanning] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -190,6 +199,16 @@ function App() {
     saveStorage({ excludeSystemArtifacts: value });
   };
 
+  // 由来タグ設定の変更（#29）。state 更新と永続化を同時に行う。
+  const setProvenanceTag = (value: string) => {
+    setProvenanceTagState(value);
+    saveStorage({ provenanceTag: value });
+  };
+  const setProvenanceFromFolder = (value: boolean) => {
+    setProvenanceFromFolderState(value);
+    saveStorage({ provenanceFromFolder: value });
+  };
+
   // スキャン
   const scanMedia = async () => {
     if (!inputDir) {
@@ -204,6 +223,8 @@ function App() {
         includeVideos: true,
         parallel: true,
         excludeSystemArtifacts,
+        provenanceTag: provenanceTag.trim() === '' ? null : provenanceTag,
+        provenanceFromFolder,
       });
       setExcludedSummary(excluded);
 
@@ -496,6 +517,10 @@ function App() {
         onVideoRotationModeChange={setDefaultVideoRotationMode}
         excludeSystemArtifacts={excludeSystemArtifacts}
         onExcludeSystemArtifactsChange={setExcludeSystemArtifacts}
+        provenanceTag={provenanceTag}
+        onProvenanceTagChange={setProvenanceTag}
+        provenanceFromFolder={provenanceFromFolder}
+        onProvenanceFromFolderChange={setProvenanceFromFolder}
         onScanMedia={scanMedia}
         isScanning={isScanning}
         onProcessMedia={processMedia}

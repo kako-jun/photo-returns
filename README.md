@@ -14,6 +14,7 @@ PhotoReturns は、EXIFメタデータに基づいて写真や動画を整理・
   - 動画4形式: MP4, MOV, M4V, WebM
 - **複数の日付ソース** - EXIF、ファイル名、作成日時、更新日時から選択可能
 - **タイムゾーン調整** - 写真と動画で個別にタイムゾーンを設定可能
+- **由来タグ**（既定OFF） - 明示ラベル、またはフォルダ名フォールバックで、出力ファイル名に取り込み元（Google Takeout / LINE 保存分等）を残せる。付けない限り出力は従来と1バイトも変わらない
 
 ### 自動機能
 - **バースト検出** - 連続撮影写真（3秒以内に3枚以上）を識別して連番を付与
@@ -107,6 +108,8 @@ PhotoReturns は、EXIFメタデータに基づいて写真や動画を整理・
 ### ファイル名
 - **通常の写真**: `YYYY-MM-DD_HH-MM-SS.ext`（サブ秒があれば `YYYY-MM-DD_HH-MM-SS-mmm.ext`）
 - **バースト写真 / 名前衝突**: 末尾に `_01`, `_02`, `_03`, ... を付与
+- **由来タグ**（既定OFF）: バースト連番の後・衝突連番の前に付く（例
+  `2025-04-22_20-59-15_takeout.jpg`）。詳細は `docs/features.md`「由来タグ」を参照
 
 ### ディレクトリ構造
 ```
@@ -155,6 +158,10 @@ output/
 - `cleanup_temp: true` - 一時ファイル削除
 - `auto_correct_orientation: true` - 画像回転修正
 - `exclude_system_artifacts: true` - システム生成物を除外（Android 削除済み `.trashed-*`、`.thumbnails` 配下、`.nomedia`、AppleDouble `._*`、OS メタデータ `.DS_Store`/`Thumbs.db`）。既定 ON なのは、削除したはずの写真が誤って取り込まれ永久アーカイブに復活する事故を防ぐため
+
+デフォルトで無効（明示的に設定した場合のみ有効）:
+- `provenance_tag: None` - 由来タグの明示ラベル。設定パネルの「PROVENANCE TAG」欄、または CLI の `--tag <LABEL>` で指定
+- `provenance_from_folder: false` - ラベル未指定時にフォルダ名を由来タグとして使うフォールバック。設定パネルの「USE FOLDER NAME IF LABEL EMPTY」トグル、または CLI の `--tag-from-folder` で有効化
 
 ## 関連ツール
 

@@ -18,9 +18,11 @@ mod dating;
 mod exclude;
 mod exif_info;
 mod layout;
+mod provenance;
 
 use dating::{
-    extract_date_from_filename, format_filename, get_file_created_date, get_file_modified_date,
+    build_stem, compare_scan_order, extract_date_from_filename, get_file_created_date,
+    get_file_modified_date,
 };
 use exif_info::{get_exif_info, is_image_file, is_video_file, ExifInfo};
 use layout::{create_backup, create_date_hierarchy, create_unsorted_dir};
@@ -50,6 +52,13 @@ pub struct ProcessOptions {
     /// システム生成物（Android の `.trashed-*`、`.thumbnails`、`.nomedia`、AppleDouble、
     /// OS メタデータ）を scan_media の入口で除外する（#28）。既定 ON。
     pub exclude_system_artifacts: bool,
+    /// 由来タグの明示ラベル（#29）。非空なら全ファイルの出力名にこのタグを使う。
+    /// サニタイズ後に空、または2桁の純数字になる値は `scan_media` がエラーを返す。既定 `None`。
+    pub provenance_tag: Option<String>,
+    /// `provenance_tag` が未指定のとき、ファイルの直上の親フォルダ名（入力ディレクトリ直下
+    /// なら入力ディレクトリ自身の名前）を由来タグとして使うフォールバックを有効にする（#29）。
+    /// 既定 `false`（＝タグは付かず、出力は #29 導入前と1バイトも変わらない）。
+    pub provenance_from_folder: bool,
 }
 
 impl Default for ProcessOptions {
@@ -62,6 +71,8 @@ impl Default for ProcessOptions {
             cleanup_temp: false,
             auto_correct_orientation: false,
             exclude_system_artifacts: true,
+            provenance_tag: None,
+            provenance_from_folder: false,
         }
     }
 }
@@ -152,6 +163,11 @@ pub struct DerivedOutput {
     pub burst_group_id: Option<usize>,
     /// バーストグループ内のインデックス（1始まり）
     pub burst_index: Option<usize>,
+    /// この1件に対して解決済みの由来タグ（#29）。`ProcessOptions.provenance_tag`（生の明示
+    /// ラベル設定）とは別物: こちらは scan 時に明示ラベル／フォルダ由来フォールバックから
+    /// 実際に決まった、サニタイズ済みの最終値。`new_name` に反映済みだが、TZ補正・衝突時の
+    /// ファイル名再生成でも一貫してこの値を使うために保持する。
+    pub resolved_provenance_tag: Option<String>,
 }
 
 /// ユーザー選択（フロントエンドで設定）
@@ -283,6 +299,26 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
         (all_entries, ExcludedSummary::default())
     };
 
+    // 由来タグの明示ラベル（#29）は実行全体で1回だけ検証する。非空なのにサニタイズ後に
+    // 使えない値（空になる／2桁の純数字）ならスキャン自体をエラーにする（フォルダ由来の
+    // 自動導出と違い、明示入力の不正はユーザーに直接気づいてほしいため握り潰さない）。
+    let explicit_provenance_tag: Option<String> = match options
+        .provenance_tag
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(raw) => match provenance::sanitize_tag(raw) {
+            Some(tag) => Some(tag),
+            None => {
+                return Err(anyhow::anyhow!(
+                    "由来タグ '{raw}' は使用できません（サニタイズ後に空になるか、衝突/バースト連番と紛らわしい2桁の純数字になるため）"
+                ));
+            }
+        },
+        None => None,
+    };
+
     let media = Arc::new(Mutex::new(Vec::new()));
 
     let processor = |entry: &walkdir::DirEntry| {
@@ -332,6 +368,23 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
             // ファイル名を取得
             let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
+            // 由来タグを解決（#29）。明示ラベルが最優先、無ければ options.provenance_from_folder
+            // が有効なときだけフォルダ由来（直上の親フォルダ名、入力ディレクトリ直下なら
+            // 入力ディレクトリ自身の名前）にフォールバックする。
+            let relative_for_tag = path.strip_prefix(input_dir).unwrap_or(path);
+            let folder_tag_candidate =
+                provenance::parent_folder_name(relative_for_tag).or_else(|| {
+                    input_dir
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|s| s.to_string())
+                });
+            let (provenance_tag, provenance_tag_warning) = provenance::resolve_tag_for_file(
+                explicit_provenance_tag.as_deref(),
+                options.provenance_from_folder,
+                folder_tag_candidate.as_deref(),
+            );
+
             // 各候補の日付を取得
             let exif_date = exif_info.date;
             let video_date = video_meta
@@ -358,15 +411,32 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
             };
 
             {
-                let new_name = if let Some(date) = date_taken {
-                    format_filename(&date, subsec, &extension)
-                } else {
-                    // 日付なし: 元のファイル名をそのまま使用（unsortedフォルダへ）
-                    filename.to_string()
+                let new_name = match (date_taken, &provenance_tag) {
+                    (Some(date), _) => {
+                        format!(
+                            "{}.{extension}",
+                            build_stem(Some(&date), subsec, None, "", provenance_tag.as_deref())
+                        )
+                    }
+                    // 日付なし・タグなし: 元のファイル名をそのまま使用（#29 既定OFF互換。
+                    // unsortedフォルダへ）
+                    (None, None) => filename.to_string(),
+                    // 日付なし・タグあり: 元ファイルの stem にタグだけ付与する
+                    (None, Some(tag)) => {
+                        let fallback_stem = Path::new(filename)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or(filename);
+                        let stem = build_stem(None, None, None, fallback_stem, Some(tag));
+                        match Path::new(filename).extension().and_then(|e| e.to_str()) {
+                            Some(ext) => format!("{stem}.{ext}"),
+                            None => stem,
+                        }
+                    }
                 };
                 let file_size = fs::metadata(path).ok().map(|m| m.len()).unwrap_or(0);
 
-                let info = MediaInfo {
+                let mut info = MediaInfo {
                     source: MediaSource {
                         original_path: path.to_path_buf(),
                         file_name: path.file_name().unwrap().to_string_lossy().to_string(),
@@ -401,6 +471,7 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
                         rotation_applied: false, // スキャン時はまだ回転していない
                         burst_group_id: None,
                         burst_index: None,
+                        resolved_provenance_tag: provenance_tag,
                     },
                     overrides: UserOverrides {
                         timezone_offset: None, // ユーザー未選択（フロントエンドで設定）
@@ -408,6 +479,11 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
                     },
                     logs: Vec::new(), // ログは空で初期化
                 };
+                // フォルダ由来のタグ候補がサニタイズで拒否された場合はここで警告ログを残す
+                // （タグなしへフォールバック済み、処理は継続する）。
+                if let Some(warning) = provenance_tag_warning {
+                    info.add_log(LogLevel::Warning, warning);
+                }
 
                 media.lock().unwrap().push(info);
             }
@@ -424,13 +500,20 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
         .map(|mutex| mutex.into_inner().unwrap())
         .unwrap_or_else(|arc| arc.lock().unwrap().clone());
 
-    // 並列処理後は順序が不定のため、撮影日時でソートしてからバースト検出を行う
-    // date_taken が None のファイルは末尾に移動する
-    result.sort_by(|a, b| match (a.dates.date_taken, b.dates.date_taken) {
-        (Some(da), Some(db)) => da.cmp(&db),
-        (Some(_), None) => std::cmp::Ordering::Less,
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => a.source.file_name.cmp(&b.source.file_name),
+    // 並列処理後は順序が不定のため、撮影日時でソートしてからバースト検出を行う。
+    // date_taken だけでは同一秒内バースト写真が全てタイになり、安定ソートの性質上
+    // 非決定な処理完了順がそのまま残ってしまう（#29 決定性仕様違反）ため、
+    // subsec_time → original_path で完全に決定的なタイブレークを行う
+    // （`compare_scan_order` 参照）。
+    result.sort_by(|a, b| {
+        compare_scan_order(
+            a.dates.date_taken,
+            a.dates.subsec_time,
+            &a.source.original_path,
+            b.dates.date_taken,
+            b.dates.subsec_time,
+            &b.source.original_path,
+        )
     });
 
     // バースト検出を実行
@@ -445,7 +528,8 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
                 media_info.derived.burst_group_id = Some(group.id);
                 media_info.derived.burst_index = Some(idx + 1); // 1始まり
 
-                // ファイル名に連番を追加
+                // ファイル名に連番を追加（#29: stem 生成は build_stem に一本化。タグは
+                // バースト連番の後に付く）
                 if let Some(date) = media_info.dates.date_taken {
                     let extension = media_info
                         .source
@@ -454,15 +538,14 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
                         .and_then(|e| e.to_str())
                         .unwrap_or("jpg");
 
-                    // ベースファイル名を生成（拡張子なし）
-                    let base_name = if let Some(ms) = media_info.dates.subsec_time {
-                        format!("{}-{:03}", date.format("%Y-%m-%d_%H-%M-%S"), ms)
-                    } else {
-                        date.format("%Y-%m-%d_%H-%M-%S").to_string()
-                    };
-
-                    media_info.derived.new_name =
-                        format!("{}_{:02}.{}", base_name, idx + 1, extension);
+                    let stem = build_stem(
+                        Some(&date),
+                        media_info.dates.subsec_time,
+                        Some(idx + 1),
+                        "",
+                        media_info.derived.resolved_provenance_tag.as_deref(),
+                    );
+                    media_info.derived.new_name = format!("{stem}.{extension}");
                 }
             }
         }
@@ -560,7 +643,16 @@ fn apply_timezone_correction(item: &mut MediaInfo) {
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
-    item.derived.new_name = format_filename(&corrected, item.dates.subsec_time, extension);
+    // #29: build_stem に一本化。TZ補正で日時が変わっても、scan時に確定した
+    // バースト連番・由来タグはそのまま引き継ぐ（そうしないと再構築のたびに消えてしまう）。
+    let stem = build_stem(
+        Some(&corrected),
+        item.dates.subsec_time,
+        item.derived.burst_index,
+        "",
+        item.derived.resolved_provenance_tag.as_deref(),
+    );
+    item.derived.new_name = format!("{stem}.{extension}");
     item.add_log(
         LogLevel::Info,
         format!(
@@ -731,6 +823,9 @@ where
                 let mut candidate = target_dir.join(&item.derived.new_name);
                 let mut counter = 1u32;
 
+                // #29: base_name（stem）の生成は build_stem に一本化。バースト連番・由来タグを
+                // 含めたまま衝突連番を末尾に付与する（そうしないと衝突時にタグ・バーストが
+                // 消えて別ファイルの名前と再衝突しかねない）。
                 while candidate.exists() {
                     let extension = item
                         .source
@@ -738,24 +833,23 @@ where
                         .extension()
                         .and_then(|e| e.to_str())
                         .unwrap_or("");
+                    // 日付なし: 元のファイル名のステム部分をフォールバックに使う
+                    let fallback_stem = item
+                        .source
+                        .original_path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("unknown");
 
-                    let base_name = if let Some(date) = item.dates.date_taken {
-                        if let Some(ms) = item.dates.subsec_time {
-                            format!("{}-{:03}", date.format("%Y-%m-%d_%H-%M-%S"), ms)
-                        } else {
-                            date.format("%Y-%m-%d_%H-%M-%S").to_string()
-                        }
-                    } else {
-                        // 日付なし: 元のファイル名のステム部分を使う
-                        item.source
-                            .original_path
-                            .file_stem()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or("unknown")
-                            .to_string()
-                    };
+                    let stem = build_stem(
+                        item.dates.date_taken.as_ref(),
+                        item.dates.subsec_time,
+                        item.derived.burst_index,
+                        fallback_stem,
+                        item.derived.resolved_provenance_tag.as_deref(),
+                    );
 
-                    candidate = target_dir.join(format!("{base_name}_{counter:02}.{extension}"));
+                    candidate = target_dir.join(format!("{stem}_{counter:02}.{extension}"));
                     counter += 1;
                 }
 
@@ -899,531 +993,5 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::exclude::ExcludedRuleCount;
-    use super::*;
-    use std::collections::BTreeSet;
-
-    /// フロントエンド契約の機械検証:
-    /// MediaInfo はサブ構造体に分割したが `#[serde(flatten)]` により
-    /// JSON は flat な 24 キーのまま（`src/types.ts` の `interface MediaInfo`）。
-    /// このテストが落ちたらフロントが壊れるサイン。
-    #[test]
-    fn mediainfo_wire_format_is_flat_24_keys() {
-        let info = MediaInfo {
-            source: MediaSource {
-                original_path: PathBuf::from("/tmp/in.jpg"),
-                file_name: "in.jpg".to_string(),
-                media_type: MediaType::Photo,
-                file_size: 123,
-                exif_orientation: Some(1),
-                width: Some(640),
-                height: Some(480),
-                supports_lossless_rotation: true,
-            },
-            dates: DateCandidates {
-                date_taken: None,
-                subsec_time: Some(42),
-                timezone: Some("+09:00".to_string()),
-                exif_date: None,
-                filename_date: None,
-                file_created_date: None,
-                file_modified_date: None,
-                date_source: DateSource::Exif,
-            },
-            derived: DerivedOutput {
-                new_name: "out.jpg".to_string(),
-                new_path: PathBuf::from("/tmp/out.jpg"),
-                rotation_applied: false,
-                burst_group_id: None,
-                burst_index: None,
-            },
-            overrides: UserOverrides {
-                timezone_offset: None,
-                rotation_mode: None,
-            },
-            logs: Vec::new(),
-        };
-
-        let value = serde_json::to_value(&info).expect("serialize MediaInfo");
-        let obj = value
-            .as_object()
-            .expect("MediaInfo must serialize to a JSON object");
-
-        let actual: BTreeSet<&str> = obj.keys().map(|k| k.as_str()).collect();
-        let expected: BTreeSet<&str> = [
-            "original_path",
-            "file_name",
-            "media_type",
-            "date_taken",
-            "subsec_time",
-            "timezone",
-            "exif_date",
-            "filename_date",
-            "file_created_date",
-            "file_modified_date",
-            "new_name",
-            "new_path",
-            "file_size",
-            "burst_group_id",
-            "burst_index",
-            "date_source",
-            "exif_orientation",
-            "rotation_applied",
-            "timezone_offset",
-            "rotation_mode",
-            "width",
-            "height",
-            "supports_lossless_rotation",
-            "logs",
-        ]
-        .into_iter()
-        .collect();
-
-        assert_eq!(
-            actual, expected,
-            "MediaInfo の top-level JSON キーがフロント契約（24キー flat）と一致しません"
-        );
-        assert_eq!(
-            actual.len(),
-            24,
-            "MediaInfo の top-level キーは 24 個のはず"
-        );
-    }
-
-    /// フロントエンド契約の機械検証:
-    /// `process_media` コマンド（lib.rs）は `options: ProcessOptions` を構造体のまま受け取る。
-    /// ProcessOptions には `#[serde(rename_all = ...)]` が無いため、wire 上のキーは snake_case。
-    /// Tauri がトップレベル引数を camelCase 化するのは `input_dir`→`inputDir` 等だけで、
-    /// ネストした `options` の内部キーには適用されない。将来このコマンドを invoke で配線する際は
-    /// `options: { backup_dir, include_videos, ... }` と snake_case で渡す必要がある。
-    /// rename_all を足すと黙ってこの契約が変わるので、それを CI で射抜く。
-    #[test]
-    fn process_options_wire_keys_are_snake_case() {
-        let value =
-            serde_json::to_value(ProcessOptions::default()).expect("serialize ProcessOptions");
-        let obj = value
-            .as_object()
-            .expect("ProcessOptions must serialize to a JSON object");
-
-        let actual: BTreeSet<&str> = obj.keys().map(|k| k.as_str()).collect();
-        let expected: BTreeSet<&str> = [
-            "parallel",
-            "backup_dir",
-            "include_videos",
-            "timezone_offset",
-            "cleanup_temp",
-            "auto_correct_orientation",
-            "exclude_system_artifacts",
-        ]
-        .into_iter()
-        .collect();
-
-        assert_eq!(
-            actual, expected,
-            "ProcessOptions の JSON キーが snake_case 契約と一致しません（rename_all を足すとフロント配線が壊れる）"
-        );
-    }
-
-    /// フロントエンド契約の機械検証（#28）:
-    /// `scan_media` コマンドの戻り値 `ScanOutcome` はフロントで
-    /// `const { media, excluded } = await invoke<ScanOutcome>(...)` と分割代入される
-    /// （`src/App.tsx`）。トップレベルキー名（media/excluded）と、その内側の
-    /// `ExcludedSummary`（total/by_rule/samples）・`ExcludedRuleCount`（rule/count）の
-    /// キー名変更をここで検知する。
-    #[test]
-    fn scan_outcome_wire_format_top_level_keys() {
-        let outcome = ScanOutcome {
-            media: Vec::new(),
-            excluded: ExcludedSummary {
-                total: 2,
-                by_rule: vec![ExcludedRuleCount {
-                    rule: "trashed".to_string(),
-                    count: 2,
-                }],
-                samples: vec!["DCIM/.trashed-1.jpg".to_string()],
-            },
-        };
-        let value = serde_json::to_value(&outcome).expect("serialize ScanOutcome");
-        let obj = value
-            .as_object()
-            .expect("ScanOutcome must serialize to a JSON object");
-
-        let keys: BTreeSet<&str> = obj.keys().map(|k| k.as_str()).collect();
-        assert_eq!(
-            keys,
-            BTreeSet::from(["media", "excluded"]),
-            "ScanOutcome のトップレベルキーは media/excluded のはず"
-        );
-
-        let excluded_obj = obj["excluded"]
-            .as_object()
-            .expect("excluded must be an object");
-        let excluded_keys: BTreeSet<&str> = excluded_obj.keys().map(|k| k.as_str()).collect();
-        assert_eq!(
-            excluded_keys,
-            BTreeSet::from(["total", "by_rule", "samples"]),
-            "ExcludedSummary のキーは total/by_rule/samples のはず"
-        );
-
-        let rule_count_obj = excluded_obj["by_rule"][0]
-            .as_object()
-            .expect("by_rule[0] must be an object");
-        let rule_count_keys: BTreeSet<&str> = rule_count_obj.keys().map(|k| k.as_str()).collect();
-        assert_eq!(
-            rule_count_keys,
-            BTreeSet::from(["rule", "count"]),
-            "ExcludedRuleCount のキーは rule/count のはず"
-        );
-    }
-
-    /// `process_media_with_list` / `process_media_with_list_progress` は事前スキャン済みの
-    /// リストを受け取って処理するだけで自身は scan しないため、`exclude_system_artifacts` の
-    /// 値に関わらず `ProcessResult::excluded_files` は常に 0（#28）。この契約を固定する。
-    #[test]
-    fn process_media_with_list_excluded_files_is_always_zero() {
-        let tmp = std::env::temp_dir().join(format!(
-            "photo_returns_excluded_zero_test_{}",
-            std::process::id()
-        ));
-        let out_dir = tmp.join("out");
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&out_dir).unwrap();
-
-        // exclude_system_artifacts=true でも scan を伴わない経路では 0 のまま。
-        let mut media = vec![tz_item(local_dt(2024, 1, 1, 12, 0, 0), None, None, None)];
-        let options_on = ProcessOptions {
-            parallel: false,
-            exclude_system_artifacts: true,
-            ..Default::default()
-        };
-        let result = process_media_with_list(&mut media, &out_dir, &options_on).unwrap();
-        assert_eq!(
-            result.excluded_files, 0,
-            "exclude_system_artifacts=true でも0のはず"
-        );
-
-        // exclude_system_artifacts=false でも同様（進捗版でも同じ契約）。
-        let mut media2 = vec![tz_item(local_dt(2024, 1, 1, 12, 0, 0), None, None, None)];
-        let options_off = ProcessOptions {
-            parallel: false,
-            exclude_system_artifacts: false,
-            ..Default::default()
-        };
-        let result2 =
-            process_media_with_list_progress(&mut media2, &out_dir, &options_off, |_| {}).unwrap();
-        assert_eq!(
-            result2.excluded_files, 0,
-            "exclude_system_artifacts=false でも0のはず"
-        );
-
-        let _ = fs::remove_dir_all(&tmp);
-    }
-
-    fn local_dt(y: i32, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> DateTime<Local> {
-        Local.with_ymd_and_hms(y, mo, d, h, mi, s).single().unwrap()
-    }
-
-    /// タイムゾーン補正テスト用に最小の MediaInfo を組み立てる。
-    fn tz_item(
-        date: DateTime<Local>,
-        subsec: Option<u32>,
-        tz_override: Option<&str>,
-        exif_tz: Option<&str>,
-    ) -> MediaInfo {
-        MediaInfo {
-            source: MediaSource {
-                original_path: PathBuf::from("/in/IMG.jpg"),
-                file_name: "IMG.jpg".to_string(),
-                media_type: MediaType::Photo,
-                file_size: 0,
-                exif_orientation: None,
-                width: None,
-                height: None,
-                supports_lossless_rotation: true,
-            },
-            dates: DateCandidates {
-                date_taken: Some(date),
-                subsec_time: subsec,
-                timezone: exif_tz.map(|s| s.to_string()),
-                exif_date: None,
-                filename_date: None,
-                file_created_date: None,
-                file_modified_date: None,
-                date_source: DateSource::Exif,
-            },
-            derived: DerivedOutput {
-                new_name: format_filename(&date, subsec, "jpg"),
-                new_path: PathBuf::new(),
-                rotation_applied: false,
-                burst_group_id: None,
-                burst_index: None,
-            },
-            overrides: UserOverrides {
-                timezone_offset: tz_override.map(|s| s.to_string()),
-                rotation_mode: None,
-            },
-            logs: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn parse_offset_seconds_handles_valid_and_invalid() {
-        assert_eq!(parse_offset_seconds("+09:00"), Some(32400));
-        assert_eq!(parse_offset_seconds("+00:00"), Some(0));
-        assert_eq!(parse_offset_seconds("-05:30"), Some(-19800));
-        assert_eq!(parse_offset_seconds("+14:00"), Some(50400));
-        assert_eq!(parse_offset_seconds("-12:00"), Some(-43200));
-        // 不正形式
-        assert_eq!(parse_offset_seconds("none"), None);
-        assert_eq!(parse_offset_seconds("0900"), None);
-        assert_eq!(parse_offset_seconds("+9:00"), None);
-        assert_eq!(parse_offset_seconds("+25:00"), None);
-        assert_eq!(parse_offset_seconds("+09:60"), None);
-        // 仕様レンジ（-12:00〜+14:00）外は弾く
-        assert_eq!(parse_offset_seconds("+15:00"), None);
-        assert_eq!(parse_offset_seconds("-13:00"), None);
-    }
-
-    #[test]
-    fn tz_correction_half_hour_offset() {
-        // -05:30 → shift = 32400 - (-19800) = 52200s = +14:30
-        let mut item = tz_item(local_dt(2024, 1, 1, 9, 0, 0), None, Some("-05:30"), None);
-        apply_timezone_correction(&mut item);
-        assert_eq!(
-            item.dates.date_taken.unwrap(),
-            local_dt(2024, 1, 1, 23, 30, 0)
-        );
-        assert_eq!(item.derived.new_name, "2024-01-01_23-30-00.jpg");
-    }
-
-    #[test]
-    fn tz_correction_utc_assumed_shifts_plus_9h() {
-        // +00:00 を選択＝UTC と仮定し JST へ補正（mock-data と一致）
-        let mut item = tz_item(local_dt(2024, 1, 1, 15, 0, 0), None, Some("+00:00"), None);
-        apply_timezone_correction(&mut item);
-        assert_eq!(
-            item.dates.date_taken.unwrap(),
-            local_dt(2024, 1, 2, 0, 0, 0)
-        );
-        assert_eq!(item.derived.new_name, "2024-01-02_00-00-00.jpg");
-    }
-
-    #[test]
-    fn tz_correction_jst_is_noop() {
-        // +09:00（既に JST）→ shift 0 で無補正、ファイル名も不変
-        let mut item = tz_item(local_dt(2024, 6, 1, 12, 30, 0), None, Some("+09:00"), None);
-        apply_timezone_correction(&mut item);
-        assert_eq!(
-            item.dates.date_taken.unwrap(),
-            local_dt(2024, 6, 1, 12, 30, 0)
-        );
-        assert_eq!(item.derived.new_name, "2024-06-01_12-30-00.jpg");
-    }
-
-    #[test]
-    fn tz_correction_none_and_unset_are_noop() {
-        for sel in [Some("none"), None] {
-            let mut item = tz_item(local_dt(2024, 1, 1, 10, 0, 0), None, sel, Some("+00:00"));
-            apply_timezone_correction(&mut item);
-            assert_eq!(
-                item.dates.date_taken.unwrap(),
-                local_dt(2024, 1, 1, 10, 0, 0)
-            );
-        }
-    }
-
-    #[test]
-    fn tz_correction_exif_uses_embedded_offset() {
-        // exif 選択＋EXIF TZ +00:00 → +9h
-        let mut item = tz_item(
-            local_dt(2024, 1, 1, 15, 0, 0),
-            None,
-            Some("exif"),
-            Some("+00:00"),
-        );
-        apply_timezone_correction(&mut item);
-        assert_eq!(
-            item.dates.date_taken.unwrap(),
-            local_dt(2024, 1, 2, 0, 0, 0)
-        );
-    }
-
-    #[test]
-    fn tz_correction_exif_without_embedded_tz_is_noop() {
-        let mut item = tz_item(local_dt(2024, 1, 1, 15, 0, 0), None, Some("exif"), None);
-        apply_timezone_correction(&mut item);
-        assert_eq!(
-            item.dates.date_taken.unwrap(),
-            local_dt(2024, 1, 1, 15, 0, 0)
-        );
-    }
-
-    #[test]
-    fn tz_correction_invalid_offset_is_noop() {
-        let mut item = tz_item(local_dt(2024, 1, 1, 15, 0, 0), None, Some("garbage"), None);
-        apply_timezone_correction(&mut item);
-        assert_eq!(
-            item.dates.date_taken.unwrap(),
-            local_dt(2024, 1, 1, 15, 0, 0)
-        );
-    }
-
-    #[test]
-    fn tz_correction_negative_offset_and_subsec_preserved() {
-        // -05:00 → shift = 32400 - (-18000) = 50400s = +14h
-        let mut item = tz_item(
-            local_dt(2024, 1, 1, 10, 0, 0),
-            Some(123),
-            Some("-05:00"),
-            None,
-        );
-        apply_timezone_correction(&mut item);
-        assert_eq!(
-            item.dates.date_taken.unwrap(),
-            local_dt(2024, 1, 2, 0, 0, 0)
-        );
-        // subsec はミリ秒なので TZ で動かず保持される
-        assert_eq!(item.derived.new_name, "2024-01-02_00-00-00-123.jpg");
-    }
-
-    // ---- 進捗（#4）----
-
-    /// フロント契約: ProgressEvent は camelCase キー（done/total/path/status）、
-    /// status は snake_case の "completed"/"error"。`types.ts` の ProgressEvent と一致。
-    #[test]
-    fn progress_event_wire_format() {
-        let ev = ProgressEvent {
-            done: 2,
-            total: 4,
-            path: "/in/IMG.jpg".to_string(),
-            status: ProgressStatus::Completed,
-        };
-        let value = serde_json::to_value(&ev).expect("serialize ProgressEvent");
-        let obj = value.as_object().expect("object");
-        let keys: BTreeSet<&str> = obj.keys().map(|k| k.as_str()).collect();
-        assert_eq!(
-            keys,
-            BTreeSet::from(["done", "total", "path", "status"]),
-            "ProgressEvent のキーは done/total/path/status（camelCase）のはず"
-        );
-        assert_eq!(obj["status"], serde_json::json!("completed"));
-
-        let err = ProgressEvent {
-            status: ProgressStatus::Error,
-            ..ev
-        };
-        let v = serde_json::to_value(&err).unwrap();
-        assert_eq!(v["status"], serde_json::json!("error"));
-    }
-
-    #[test]
-    fn progress_percent_basic_and_edges() {
-        assert_eq!(progress_percent(0, 4), 0);
-        assert_eq!(progress_percent(1, 4), 25);
-        assert_eq!(progress_percent(2, 4), 50);
-        assert_eq!(progress_percent(4, 4), 100);
-        // 端数は切り捨て: 1/3 = 33%
-        assert_eq!(progress_percent(1, 3), 33);
-        assert_eq!(progress_percent(2, 3), 66);
-        // total==0 は完了扱い（100）
-        assert_eq!(progress_percent(0, 0), 100);
-        // done > total でも 100 に丸める（防御的）
-        assert_eq!(progress_percent(5, 4), 100);
-    }
-
-    /// 進捗 done は 1..=total を1度ずつ網羅し、ファイル数ぶん emit される。
-    /// 並列処理でも到着順に関係なく到達点（done の集合）が一致することを検証する。
-    #[test]
-    fn progress_emits_once_per_file_covering_1_to_total() {
-        use std::collections::BTreeSet;
-        use std::sync::Mutex as StdMutex;
-
-        let tmp = std::env::temp_dir().join(format!(
-            "photo_returns_progress_test_{}",
-            std::process::id()
-        ));
-        let in_dir = tmp.join("in");
-        let out_dir = tmp.join("out");
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&in_dir).unwrap();
-        fs::create_dir_all(&out_dir).unwrap();
-
-        // 入力ファイルを4つ用意（中身は何でもよい。日付なし→unsorted へコピーされる）。
-        let mut media = Vec::new();
-        for i in 0..4 {
-            let p = in_dir.join(format!("file{i}.jpg"));
-            fs::write(&p, b"x").unwrap();
-            media.push(tz_item(local_dt(2024, 1, 1, 0, 0, i), None, None, None));
-            // original_path をこのファイルに差し替える（コピー元が実在する必要がある）
-            let last = media.last_mut().unwrap();
-            last.source.original_path = p.clone();
-            last.source.file_name = format!("file{i}.jpg");
-            last.dates.date_taken = Some(local_dt(2024, 1, 1, 0, 0, i));
-        }
-
-        let events: Arc<StdMutex<Vec<ProgressEvent>>> = Arc::new(StdMutex::new(Vec::new()));
-        let events_cb = Arc::clone(&events);
-
-        let options = ProcessOptions {
-            parallel: true,
-            ..Default::default()
-        };
-        let result = process_media_with_list_progress(&mut media, &out_dir, &options, move |ev| {
-            events_cb.lock().unwrap().push(ev);
-        })
-        .unwrap();
-
-        let collected = events.lock().unwrap();
-        // ファイル数ぶん emit
-        assert_eq!(collected.len(), 4, "1ファイル1イベントのはず");
-        // total は全件
-        assert!(collected.iter().all(|e| e.total == 4));
-        // done は 1..=4 を1度ずつ網羅（並列でも採番が一意）
-        let dones: BTreeSet<usize> = collected.iter().map(|e| e.done).collect();
-        assert_eq!(dones, BTreeSet::from([1, 2, 3, 4]));
-        // 全件成功（実在ファイルを out へコピー）
-        assert!(collected
-            .iter()
-            .all(|e| e.status == ProgressStatus::Completed));
-        assert_eq!(result.processed_files, 4);
-
-        let _ = fs::remove_dir_all(&tmp);
-    }
-
-    /// コピー元が存在しないファイルは Error ステータスで emit され、進捗カウントは進む。
-    #[test]
-    fn progress_emits_error_status_on_failure() {
-        let tmp = std::env::temp_dir().join(format!(
-            "photo_returns_progress_err_test_{}",
-            std::process::id()
-        ));
-        let out_dir = tmp.join("out");
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&out_dir).unwrap();
-
-        // 実在しないコピー元 → fs::copy が失敗し Error になる
-        let mut item = tz_item(local_dt(2024, 1, 1, 12, 0, 0), None, None, None);
-        item.source.original_path = tmp.join("does_not_exist.jpg");
-        let mut media = vec![item];
-
-        let captured = Arc::new(Mutex::new(Vec::new()));
-        let cb = Arc::clone(&captured);
-        let options = ProcessOptions {
-            parallel: false,
-            ..Default::default()
-        };
-        process_media_with_list_progress(&mut media, &out_dir, &options, move |ev| {
-            cb.lock().unwrap().push(ev);
-        })
-        .unwrap();
-
-        let evs = captured.lock().unwrap();
-        assert_eq!(evs.len(), 1);
-        assert_eq!(evs[0].status, ProgressStatus::Error);
-        assert_eq!(evs[0].done, 1);
-        assert_eq!(evs[0].total, 1);
-
-        let _ = fs::remove_dir_all(&tmp);
-    }
-}
+#[path = "mod_tests.rs"]
+mod tests;

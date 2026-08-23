@@ -585,3 +585,100 @@ fn e2e_exclusion_does_not_interfere_with_burst_detection() {
         "除外後も burst_index は 1..3 の連番のはず"
     );
 }
+
+// ---------------------------------------------------------------------------
+// #29 修正2: 同秒内バーストの burst_index 割り当ては parallel: true でも決定的
+// （並列スキャンのスレッドスケジューリング依存で実行のたびに入れ替わらないこと）
+// ---------------------------------------------------------------------------
+#[test]
+fn e2e_parallel_scan_burst_index_is_deterministic_across_runs() {
+    let (input, _output) = workspace("parallel_determinism");
+    // 3枚とも同一秒（ファイル名から抽出される日時が完全一致）。
+    // subsec も EXIF もないため、タイブレークは original_path のみで決まる。
+    write_plain_jpeg(&input, "a_20240115_100000.jpg", 16, 16);
+    write_plain_jpeg(&input, "b_20240115_100000.jpg", 16, 16);
+    write_plain_jpeg(&input, "c_20240115_100000.jpg", 16, 16);
+
+    let parallel_opts = ProcessOptions {
+        parallel: true,
+        ..Default::default()
+    };
+
+    // 複数回スキャンし、original_path → burst_index の対応が毎回同一であることを確認する。
+    let mut previous: Option<Vec<(PathBuf, Option<usize>)>> = None;
+    for run in 0..10 {
+        let outcome = scan_media(&input, &parallel_opts).unwrap();
+        assert_eq!(outcome.media.len(), 3);
+
+        let mut mapping: Vec<(PathBuf, Option<usize>)> = outcome
+            .media
+            .iter()
+            .map(|m| (m.source.original_path.clone(), m.derived.burst_index))
+            .collect();
+        mapping.sort_by(|a, b| a.0.cmp(&b.0));
+
+        if let Some(prev) = &previous {
+            assert_eq!(
+                &mapping, prev,
+                "run {run}: burst_index の割り当てが前回実行と異なる（非決定的）"
+            );
+        }
+        previous = Some(mapping);
+    }
+
+    // 割り当てられた burst_index 自体も 1..3 の連番で、original_path の昇順と一致するはず。
+    let final_mapping = previous.unwrap();
+    let indices: Vec<Option<usize>> = final_mapping.iter().map(|(_, idx)| *idx).collect();
+    assert_eq!(
+        indices,
+        vec![Some(1), Some(2), Some(3)],
+        "original_path 昇順（a, b, c）で burst_index 1..3 が振られるはず: {final_mapping:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// #29 回帰(a): TZ補正がバースト連番を落とさない。`apply_timezone_correction` が
+// 旧 format_filename を直呼びしていたため、TZ補正がかかるとバースト連番が黙って
+// 消えていた潜在バグの e2e 回帰（実ファイル名で確認する、最も説得力のある経路）。
+// ---------------------------------------------------------------------------
+#[test]
+fn e2e_timezone_override_preserves_burst_index_in_output_filename() {
+    let (input, output) = workspace("tz_burst");
+    // 3枚のバースト写真（同日1秒間隔。burst設定既定: max_interval_seconds=3, min_count=3）
+    write_plain_jpeg(&input, "IMG_20240115_100000.jpg", 16, 16);
+    write_plain_jpeg(&input, "IMG_20240115_100001.jpg", 16, 16);
+    write_plain_jpeg(&input, "IMG_20240115_100002.jpg", 16, 16);
+
+    let mut media = scan_media(&input, &opts()).unwrap().media;
+    assert_eq!(media.len(), 3);
+    assert!(
+        media.iter().all(|m| m.derived.burst_index.is_some()),
+        "3枚ともバースト扱いで burst_index が付くはず: {:?}",
+        media
+            .iter()
+            .map(|m| m.derived.burst_index)
+            .collect::<Vec<_>>()
+    );
+
+    // 全件に TZ override（"+00:00" = UTC と仮定 → JST +9h）を付ける。
+    for m in media.iter_mut() {
+        m.overrides.timezone_offset = Some("+00:00".to_string());
+    }
+    let result = process_media_with_list(&mut media, &output, &opts()).unwrap();
+    assert_eq!(result.processed_files, 3);
+
+    let outputs = collect_output_jpegs(&output);
+    assert_eq!(outputs.len(), 3);
+    let names: Vec<String> = outputs
+        .iter()
+        .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+        .collect();
+    // TZ補正後もバースト連番 _01/_02/_03 が実ファイル名に残っていること
+    // （TZ補正でバーストが消えていた潜在バグの回帰）。
+    for suffix in ["_01.jpg", "_02.jpg", "_03.jpg"] {
+        assert!(
+            names.iter().any(|n| n.ends_with(suffix)),
+            "TZ補正後もバースト連番 {suffix} が実ファイル名に残っているはず: {names:?}"
+        );
+    }
+}

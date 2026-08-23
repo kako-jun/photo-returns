@@ -123,6 +123,8 @@ fn main() {
         cleanup_temp: true,
         auto_correct_orientation: false,
         exclude_system_artifacts: true,
+        provenance_tag: None,
+        provenance_from_folder: false,
     };
 
     let selected_file = File::create(&selected_path).unwrap_or_else(|err| {
