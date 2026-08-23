@@ -44,7 +44,8 @@ cd src-tauri && cargo test  # Rust tests
 
 ## Key Conventions
 
-- Pre-commit hooks: Husky + lint-staged (ESLint + Prettier for TS, rustfmt + clippy for Rust)
+- Pre-commit hooks: Husky + lint-staged (ESLint + Prettier for TS, rustfmt for Rust)。clippy はビルドを伴い遅いため pre-commit では実行せず CI に任せる
+- **`git worktree` で作業ディレクトリを作ったら、そこで最初に `npm run prepare` を実行する。** husky v9 は hooks を `.husky/_`（gitignore 対象、`prepare`=`husky` コマンドが生成）に向けており、worktree にはこのディレクトリが存在しない。`node_modules` を共有クローンから symlink しただけでは `.husky/_` は生成されない（`prepare` は `npm install`/`npm ci` のライフサイクルでしか走らない）。この状態では git は pre-commit hook を**エラーも警告も出さずに黙って無視する**ため、rustfmt/lint-staged が一切走らず、未整形の Rust コードがそのままコミットできてしまう（#38 の「未整形コミット」を起こしうる別経路。忘れると気づかずに再発する）
 - `chrono` requires `serde` feature for DateTime serialization
 - `kamadak-exif` is imported as `exif`
 - `img-parts` requires `use` for `ImageEXIF` trait
@@ -53,9 +54,9 @@ cd src-tauri && cargo test  # Rust tests
 
 ## CI/CD
 
-- **CI**: `.github/workflows/ci.yml` — push/PR to main triggers `npm run build` / `npm test` (vitest) / `cargo fmt --check` / `cargo clippy -- -D warnings` / `cargo check` / `cargo test`
+- **CI**: `.github/workflows/ci.yml` — push/PR to main は `frontend` job（`npm run build` / `npm test`）と `rust` job（`cargo fmt --check` / `cargo clippy -- -D warnings` / `cargo check` / `cargo test`）を並列実行。各 job 内でも独立して判定できるステップ（frontendのbuildとtest、rustのfmt/clippy/check）は互いの失敗に関わらず全て実行され、1回のCI実行で全ての失敗が見える（test だけは check の成功に依存）。いずれか1つでも失敗すれば job・CI全体が失敗になる
 - **Release**: `.github/workflows/release.yml` — manual dispatch or tag `v*`, 3-OS matrix (macOS/Linux/Windows), tauri-action, draft release
-- **Pre-commit**: Husky + lint-staged (`eslint --fix` + `prettier` for TS/JS, `prettier` for JSON/CSS/MD) + `cargo fmt`
+- **Pre-commit**: Husky + lint-staged（`eslint --fix` + `prettier` for TS/JS、`prettier` for JSON/CSS/MD、`rustfmt --edition 2021` for Rust）。整形結果は lint-staged が自動で再ステージする。clippy は実行しない
 
 ## Design Decisions
 

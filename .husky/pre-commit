@@ -1,2 +1,1 @@
 npx lint-staged
-cd src-tauri && cargo fmt

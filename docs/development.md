@@ -476,9 +476,10 @@ npm run format:rust:check  # rustfmt チェック
 ```
 
 **Pre-commit フック:**
-- **Husky + lint-staged** によりコミット時に自動実行
+- **Husky + lint-staged** によりコミット時に自動実行（整形結果は lint-staged が自動で再ステージする）
 - TypeScript/React: ESLint + Prettier
-- Rust: rustfmt + clippy
+- Rust: rustfmt（clippy はビルドを伴い遅いため pre-commit では実行せず CI に任せる）
+- `git worktree` で作った作業ディレクトリでは `npm run prepare` を実行しないと hook が無言で無効になる（詳細は `CLAUDE.md`）
 - 詳細は `LINT_SETUP.md` を参照
 
 ### ビルド & リリース
@@ -500,7 +501,7 @@ npm run format:rust:check  # rustfmt チェック
 リリースはドラフトとして作成されるため、公開前に内容を確認・編集できます。
 
 **設定ファイル:**
-- `.github/workflows/build-release.yml` - ビルドワークフロー定義
+- `.github/workflows/release.yml` - リリースビルドワークフロー定義
 - `src-tauri/tauri.conf.json` - アプリ設定（バージョン、識別子等）
 
 ## 既知の問題と解決策

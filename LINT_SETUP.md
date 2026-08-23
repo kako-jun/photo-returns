@@ -59,8 +59,9 @@ npm run lint && npm run format:check && npm run lint:rust && npm run format:rust
 1. **Prettier** で自動フォーマット
 
 ### Rust ファイル (.rs)
-1. **rustfmt** で自動フォーマット
-2. **clippy** でlintチェック
+1. **rustfmt** で自動フォーマット（整形結果は lint-staged が自動で再ステージする）
+
+clippy は pre-commit では実行しない（ビルドを伴い遅いため）。CI 側でのみチェックする。
 
 ### 動作確認
 
@@ -80,15 +81,23 @@ git commit -m "test commit"
 
 ### PR/Push 時のチェック (.github/workflows/ci.yml)
 
-`main` ブランチへの Push または PR 時に以下が実行されます：
+`main` ブランチへの Push または PR 時に、`frontend` job と `rust` job が並列で実行されます。どちらか一方でも失敗すれば CI 全体が失敗になります。
 
-1. フロントエンド lint チェック
-2. フロントエンド フォーマットチェック
-3. Rust フォーマットチェック
-4. Rust lint チェック（警告のみ）
-5. TypeScript ビルドチェック
+**frontend job:**
+1. `npm run build`（tsc + vite）
+2. `npm test`（vitest）
 
-### リリースビルド時のチェック (.github/workflows/build-release.yml)
+ビルドとテストは互いに依存しないため、一方が失敗してももう一方は実行され、1回のCI実行で両方の結果が見えます。
+
+**rust job:**
+1. `cargo fmt --check`
+2. `cargo clippy -- -D warnings`（警告はエラー扱い）
+3. `cargo check`
+4. `cargo test`（`cargo check` が成功した場合のみ）
+
+fmt / clippy / check は互いに独立した判定のため、どれか1つが失敗しても残りは実行され、1回のCI実行で全ての失敗が見えます（fmt失敗がビルドエラーを隠さないようにするための構成）。
+
+### リリースビルド時のチェック (.github/workflows/release.yml)
 
 リリースビルド時にも同様のチェックが実行されます。
 
@@ -138,6 +147,16 @@ git commit -m "test commit"
 # Husky を再インストール
 npm run prepare
 ```
+
+husky v9 は `core.hooksPath` を `.husky/_` に向けるが、この `_` ディレクトリは
+`npm run prepare` が生成するもので **gitignore 対象**。存在しない場合、git は
+pre-commit フックを**エラーも警告も出さずに黙って無視する**（コミットは普通に成功し、
+rustfmt も lint-staged も走らない）。
+
+特に **`git worktree` で作った作業ディレクトリでは必ずこの状態になる**。
+`node_modules` を共有クローンから symlink しただけでは足りない（`prepare` は
+`npm install` / `npm ci` のライフサイクルでしか走らない）。worktree を作ったら
+最初に `npm run prepare` を実行すること。
 
 ### ESLint エラー
 
