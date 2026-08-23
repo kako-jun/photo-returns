@@ -71,13 +71,18 @@ fn extract_p3_unix_ms_timestamp_returns_some() {
 }
 
 #[test]
-fn extract_p3_timestamp_must_be_at_start_falls_through_to_p4() {
-    // quirk(characterization): P3 は先頭アンカー(^)なので、先頭に無い13桁は
-    // P3 にマッチしない。しかし数字列 "1763020644906" は P4 の (\d{4})(\d{2})(\d{2})
-    // に部分マッチし、1763-02-06 という（タイムスタンプ由来とは無関係な）日付として
-    // 拾われる。実装の現状挙動をそのまま pin する。
+fn extract_p3_unix_ms_timestamp_after_prefix_returns_some() {
+    let got = extract_date_from_filename("LINE_MOVIE_1540357476150.mp4");
+    assert!(got.is_some());
+}
+
+#[test]
+fn extract_p3_timestamp_must_be_at_start_and_does_not_fall_through() {
+    // P3 は先頭アンカー(^)なので、先頭に無い13桁は P3 にマッチしない。
+    // P4 も長い数字列の途中を拾わないため、タイムスタンプ由来とは無関係な
+    // 1763-02-06 のような偽日付にはしない。
     let got = extract_date_from_filename("x1763020644906.jpg");
-    assert_eq!(got, Some(local(1763, 2, 6, 0, 0, 0)));
+    assert_eq!(got, None);
 }
 
 #[test]
@@ -91,6 +96,12 @@ fn extract_p4_date_only_no_time() {
 fn extract_p4_plain_eight_digits() {
     let got = extract_date_from_filename("20250115.jpg");
     assert_eq!(got, Some(local(2025, 1, 15, 0, 0, 0)));
+}
+
+#[test]
+fn extract_none_for_line_long_numeric_id() {
+    let got = extract_date_from_filename("line_314408166989840.jpg");
+    assert_eq!(got, None);
 }
 
 #[test]
