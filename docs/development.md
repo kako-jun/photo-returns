@@ -184,6 +184,49 @@
   `e2e_exclude_system_artifacts_disabled_includes_trashed`（ゴミ混じりフィクスチャで
   scan→process の出力に混入しないこと・`ExcludedSummary` の件数を機械検証）
 
+### Phase 10: 由来タグ（#29）✅
+- 複数ソース（Google Takeout / LINE 保存分 / 既存アーカイブ / 別端末）から写真を1つの
+  ライブラリへ集約する際、現行の命名（`YYYY-MM-DD_HH-MM-SS[-mmm].ext` ＋ 日付階層）では
+  「どこから来たファイルか」が失われる問題への対応。ファイル名自体に由来タグを残す
+- タグの決め方は「明示ラベル優先＋フォルダ由来フォールバック」。`ProcessOptions.provenance_tag:
+  Option<String>`（実行ごとの明示ラベル）が非空ならそれを全ファイルに使う。未入力かつ
+  `ProcessOptions.provenance_from_folder: bool` が有効なら、ファイルの直上の親フォルダ名
+  （入力ディレクトリ直下のファイルは入力ディレクトリ自身の名前）を使う。既定は両方 OFF
+  （`None` / `false`）＝タグなし＝出力は #29 導入前と1バイトも変わらない
+- タグの位置は「バースト連番の後・衝突連番の前」: `stem = YYYY-MM-DD_HH-MM-SS[-mmm]
+  [_バーストNN][_タグ]`、出力は `stem.ext`（衝突なし）/ `stem_NN.ext`（衝突時のみ）
+- **stem 生成の一本化**: 従来 `dating::format_filename`（通常時）・`scan_media` 内の
+  バースト反映ループ・`process_media_inner` の衝突ループの3箇所に重複していた
+  「日付＋サブ秒→base_name」の組み立てロジックを `dating::build_stem(date, subsec,
+  burst_index, fallback_stem, tag)` に集約した。TZ補正（`apply_timezone_correction`）も
+  同じ関数を使うよう変更し、TZ補正で日時が変わってもバースト連番・タグが消えないようにした
+  （旧実装は TZ補正時に `format_filename` を直呼びしておりバースト連番が失われる潜在バグが
+  あった）。衝突ループも同様にバースト連番・タグを保持したまま衝突連番を末尾に付与するよう
+  修正（旧実装は衝突時に日付のみへ巻き戻っており、バースト写真同士が衝突すると取り違えかね
+  なかった）
+- タグのサニタイズ・解決は純粋関数として `photo_core/provenance.rs` に切り出した
+  （`mod.rs` を太らせないため）: `sanitize_tag`（パス区切り・予約文字・空白・`_` を `-` に
+  置換、連続する `-` を1個に畳み先頭末尾を除去、最大32文字、非ASCII保持、空または2桁純数字
+  なら `None`）・`parent_folder_name`（相対パスから直上の親フォルダ名を抽出）・
+  `resolve_tag_for_file`（明示ラベル優先＋フォルダ由来フォールバックの解決。フォルダ由来が
+  サニタイズで拒否されたら警告ログを出してタグなしにフォールバック、明示ラベルの不正は
+  `scan_media` がエラーを返す）
+- タグ解決は `scan_media` の中で行い `derived.resolved_provenance_tag`（`MediaInfo` の派生
+  フィールド。`ProcessOptions.provenance_tag` ＝生の明示ラベル設定とは別物）に確定値を保持
+  したまま `new_name` に反映する。scan-only（CLIの `--scan-only`）でもプレビューに出る
+- 配線: `ProcessOptions` に `provenance_tag: Option<String>` / `provenance_from_folder: bool`
+  を追加（既定 `None` / `false`）。`scan_media` Tauri コマンドに `provenanceTag` /
+  `provenanceFromFolder` 引数を追加（トップレベル引数なので camelCase）。CLI に `--tag
+  <LABEL>` / `--tag-from-folder` を追加
+- UI: `DefaultSettings.tsx` に写真/動画どちらのチャンネルにも属さない全体設定として、
+  ラベル入力欄（`input-recessed`）＋「ラベル未指定時はフォルダ名を使う」トグル
+  （`checkbox-hardware`。#28 の EXCLUDE SYSTEM ARTIFACTS と同じ流儀）を追加。値は
+  `storage.ts` の `provenanceTag` / `provenanceFromFolder` で永続化
+- テスト: `dating.rs`（`build_stem` の日付＋サブ秒＋バースト＋タグ組み立て）・
+  `provenance.rs`（`sanitize_tag` / `parent_folder_name` / `resolve_tag_for_file` の
+  ユニットテスト）。CLI 実機で golden path（通常・バースト・衝突・日付なし・フォルダ由来
+  ネスト/直下・2桁数字拒否・既定OFF不変）を確認済み
+
 ## 主要機能
 
 ### 自動実行される操作
@@ -263,6 +306,15 @@ YYYY-MM-DD_HH-MM-SS-mmm_02.ext
 2025-01-15_10-30-00-123_02.jpg
 ```
 
+**由来タグ付き（#29、既定OFF）:**
+```
+YYYY-MM-DD_HH-MM-SS[-mmm][_バーストNN]_タグ.ext
+2025-04-22_20-59-15_takeout.jpg          # 通常
+2025-04-22_20-59-15_01_takeout.jpg       # バースト（連番の後にタグ）
+2025-04-22_20-59-15_takeout_01.jpg       # 衝突（タグの後に衝突連番）
+```
+詳細は `docs/features.md`「由来タグ」を参照。
+
 **ディレクトリ構造:**
 ```
 output/
@@ -317,9 +369,10 @@ output/
     - **画像回転処理**
     - **EXIF Orientation書き換え呼び出し**
     - **詳細ログ記録**
-  - `dating.rs` - ファイル名からの日付抽出 / ファイル作成・変更日時取得 / ファイル名生成
+  - `dating.rs` - ファイル名からの日付抽出 / ファイル作成・変更日時取得 / stem 生成の単一正本（`build_stem`。日付＋サブ秒＋バースト連番＋由来タグを組み立てる。#29）
   - `exif_info.rs` - EXIF 抽出 / 画像・動画拡張子判定（モジュール名は exif クレートとの衝突回避のため exif_info）
   - `layout.rs` - 日付階層ディレクトリ作成 / バックアップ / unsorted ディレクトリ作成
+  - `provenance.rs` - 由来タグのサニタイズ・解決（`sanitize_tag` / `parent_folder_name` / `resolve_tag_for_file`。#29）
   - 外部参照パス（`photo_core::scan_media` 等）は従来どおり有効
 - `burst.rs` (213行) - バースト検出アルゴリズム
 - `orientation.rs` (220+行) - 画像向き処理
