@@ -207,7 +207,8 @@
 - タグのサニタイズ・解決は純粋関数として `photo_core/provenance.rs` に切り出した
   （`mod.rs` を太らせないため）: `sanitize_tag`（パス区切り・予約文字・空白・`_` を `-` に
   置換、連続する `-` を1個に畳み先頭末尾を除去、最大32文字、非ASCII保持、空または2桁純数字
-  なら `None`）・`parent_folder_name`（相対パスから直上の親フォルダ名を抽出）・
+  （全角数字・半角全角混在を含む。`char::is_numeric()` と `chars().count()` で判定し
+  ASCII に限定しない）なら `None`）・`parent_folder_name`（相対パスから直上の親フォルダ名を抽出）・
   `resolve_tag_for_file`（明示ラベル優先＋フォルダ由来フォールバックの解決。フォルダ由来が
   サニタイズで拒否されたら警告ログを出してタグなしにフォールバック、明示ラベルの不正は
   `scan_media` がエラーを返す）
@@ -226,6 +227,8 @@
   `provenance.rs`（`sanitize_tag` / `parent_folder_name` / `resolve_tag_for_file` の
   ユニットテスト）。CLI 実機で golden path（通常・バースト・衝突・日付なし・フォルダ由来
   ネスト/直下・2桁数字拒否・既定OFF不変）を確認済み
+- 独立QAレビュー修正1: `is_pure_two_digit` の全角数字すり抜け（`"０１"` が2桁拒否をすり抜け
+  タグ採用されていた）を修正。`char::is_numeric()` + `chars().count()` で全角・半角混在も拒否
 
 ## 主要機能
 

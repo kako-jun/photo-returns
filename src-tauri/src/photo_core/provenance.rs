@@ -19,8 +19,8 @@ const MAX_TAG_LEN: usize = 32;
 /// - 連続する `-` を1個に畳み、先頭末尾の `-` を除去
 /// - 最大 `MAX_TAG_LEN` 文字で切り詰め（切り詰めで末尾に `-` が残ったら除去）
 /// - 非 ASCII（日本語等）は保持する
-/// - 結果が空、または2桁の純数字（"01" 等。衝突連番・バースト連番と見分けがつかない）なら
-///   `None`（タグなし扱い）
+/// - 結果が空、または2桁の純数字（"01" 等。衝突連番・バースト連番と見分けがつかない。
+///   全角数字（"０１" 等）や半角全角混在（"0１" 等）も対象）なら `None`（タグなし扱い）
 pub(crate) fn sanitize_tag(raw: &str) -> Option<String> {
     let mut collapsed = String::with_capacity(raw.len());
     let mut prev_dash = false;
@@ -64,8 +64,11 @@ fn is_replaced_char(ch: char) -> bool {
 }
 
 /// 2桁の純数字（"00"〜"99"）か。衝突連番・バースト連番（`_NN`）と見分けがつかないため拒否する。
+/// 全角数字（`０`〜`９`等）も対象に含める。半角と紛らわしく `_01` に読み違えられるため、
+/// 文字種は ASCII に絞らず `char::is_numeric()` で判定する。バイト長では全角1文字が
+/// 3バイトになり誤判定するため、`chars().count()` で文字数として2桁を数える。
 fn is_pure_two_digit(s: &str) -> bool {
-    s.len() == 2 && s.chars().all(|c| c.is_ascii_digit())
+    s.chars().count() == 2 && s.chars().all(char::is_numeric)
 }
 
 /// ファイルの直上の親フォルダ名を返す純粋関数（入力ディレクトリからの相対パスを受け取る）。
@@ -211,6 +214,24 @@ mod tests {
         // trim され "01" だけが残るパターン）。
         assert_eq!(sanitize_tag("_01_"), None);
         assert_eq!(sanitize_tag("/01/"), None);
+    }
+
+    #[test]
+    fn sanitize_rejects_full_width_two_digit() {
+        // 全角2桁は機械的には ASCII "01" と別物だが、人間が読むと "_01" と紛らわしいため拒否する。
+        assert_eq!(sanitize_tag("０１"), None);
+    }
+
+    #[test]
+    fn sanitize_rejects_mixed_width_two_digit() {
+        // 半角＋全角の混在2桁も同様に拒否する。
+        assert_eq!(sanitize_tag("0１"), None);
+    }
+
+    #[test]
+    fn sanitize_allows_two_char_non_numeric() {
+        // 2文字でも数字でなければ許可される（"jp" 等の言語コードのようなタグ）。
+        assert_eq!(sanitize_tag("jp"), Some("jp".to_string()));
     }
 
     // ===== parent_folder_name =====
