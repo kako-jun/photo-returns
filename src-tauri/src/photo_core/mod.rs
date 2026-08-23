@@ -25,6 +25,13 @@ use dating::{
 use exif_info::{get_exif_info, is_image_file, is_video_file, ExifInfo};
 use layout::{create_backup, create_date_hierarchy, create_unsorted_dir};
 
+// `ExcludedRuleCount` / `ExcludedSummary` は `exclude.rs` が生成するデータなので定義もそちらに
+// 置く（#28 self-review S1）。外部から見える型パス（`photo_core::ExcludedSummary` 等）と
+// serde の wire 契約は変えないため、ここで再輸出する。`ExcludedRuleCount` は本体コードから
+// 直接使わない（`tests` サブモジュールでのみ使用）ため、非 test ビルドで unused import に
+// ならないよう `ExcludedSummary` だけを再輸出する。
+pub(crate) use exclude::ExcludedSummary;
+
 /// 処理オプション
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessOptions {
@@ -186,23 +193,6 @@ pub struct ProcessResult {
     /// リストを受け取るだけで自身は scan しないため常に 0。scan から行う `process_media` のみ
     /// scan 結果の `ExcludedSummary::total` を反映する。
     pub excluded_files: usize,
-}
-
-/// 除外ルール1件分の件数（#28）。ルールの並び順を安定させるため HashMap ではなく Vec で持つ。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExcludedRuleCount {
-    pub rule: String,
-    pub count: usize,
-}
-
-/// scan_media で除外されたファイルのサマリ（#28）。
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ExcludedSummary {
-    pub total: usize,
-    /// ルール別件数。0件のルールは含まない。並び順は仕様の表の順で固定。
-    pub by_rule: Vec<ExcludedRuleCount>,
-    /// 除外された相対パスのサンプル（先頭20件まで）。
-    pub samples: Vec<String>,
 }
 
 /// `scan_media` の戻り値。スキャンされたメディアと除外サマリを両方持つ（#28）。
@@ -879,6 +869,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::exclude::ExcludedRuleCount;
     use super::*;
     use std::collections::BTreeSet;
 

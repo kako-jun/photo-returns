@@ -11,9 +11,25 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
 use walkdir::DirEntry;
 
-use super::{ExcludedRuleCount, ExcludedSummary};
+/// 除外ルール1件分の件数（#28）。ルールの並び順を安定させるため HashMap ではなく Vec で持つ。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExcludedRuleCount {
+    pub rule: String,
+    pub count: usize,
+}
+
+/// scan_media で除外されたファイルのサマリ（#28）。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ExcludedSummary {
+    pub total: usize,
+    /// ルール別件数。0件のルールは含まない。並び順は仕様の表の順で固定。
+    pub by_rule: Vec<ExcludedRuleCount>,
+    /// 除外された相対パスのサンプル（先頭20件まで）。
+    pub samples: Vec<String>,
+}
 
 /// 除外ルール。バリアントの並び順が仕様の表の順であり、`ExcludedSummary::by_rule` の
 /// 表示順を決める。
