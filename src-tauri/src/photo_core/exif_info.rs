@@ -213,16 +213,16 @@ mod tests {
         out
     }
 
-    /// kamadak-exif が受理する最小の HEIC（ISO BMFF/HEIF）ファイルを手で組み立てる。
+    /// DateTimeOriginal / OffsetTimeOriginal / SubSecTimeOriginal / Orientation /
+    /// PixelXDimension / PixelYDimension を含む、HEIC/HEIF/AVIF 共通の Exif TIFF
+    /// （リトルエンディアン）を組み立てる。
     ///
-    /// 構成は kamadak-exif 自身のユニットテスト（`isobmff.rs` の `unknown_before_ftyp`）と
-    /// 同じ `ftyp` + `meta{iloc,iinf,idat}` の最小骨格を土台にする。`idat`
-    /// （construction_method=1、offset/length=0=ボディ全体）に、DateTimeOriginal /
-    /// OffsetTimeOriginal / SubSecTimeOriginal / Orientation / PixelXDimension /
-    /// PixelYDimension を含む自前の Exif TIFF（リトルエンディアン）を埋め込む。
-    /// 実機の HEIC ファイルを用意できなかったため、この手組みフィクスチャで実測する。
-    fn build_heic_with_exif() -> Vec<u8> {
-        // --- Exif TIFF (little endian) ---
+    /// 実機での実測（#31 セルフレビュー S3。kamadak-exif 同梱の `tests/exif.heic` と、
+    /// iPhone 実機の HEIC 1837枚から均等抽出した307枚に `get_exif_info` を実行、一時検証
+    /// コードでの確認・非コミット）で、iPhone 実機 HEIC は全件（307/307）date/orientation/
+    /// width/height が読めることを確認済み。個人写真のためこのフィクスチャには使えず、
+    /// 手組みのまま維持する。
+    fn build_exif_tiff() -> Vec<u8> {
         let mut tiff = Vec::new();
         tiff.extend_from_slice(b"II");
         tiff.extend_from_slice(&0x002Au16.to_le_bytes());
@@ -284,9 +284,16 @@ mod tests {
         tiff.extend_from_slice(b"+09:00\0"); // 7バイト @124
         assert_eq!(tiff.len(), 131);
 
+        tiff
+    }
+
+    /// `tiff`（Exif TIFF 本体）を `idat`/`iloc`/`iinf` にラップした `meta` ボックスを組み立てる。
+    /// HEIC/HEIF/AVIF で共通（kamadak-exif は `ftyp` の brand を見るだけで `meta` の中身の
+    /// 解釈は形式で分岐しない）。
+    fn build_meta_box(tiff: &[u8]) -> Vec<u8> {
         // --- idat: 先頭4バイトのオフセット(0)＋TIFF本体 ---
         let mut idat_body = vec![0u8; 4];
-        idat_body.extend_from_slice(&tiff);
+        idat_body.extend_from_slice(tiff);
         let idat = build_box(b"idat", &idat_body);
 
         // --- iloc: item_id=0x1e1d, construction_method=1（idat参照）、offset/length=0=全体 ---
@@ -317,13 +324,39 @@ mod tests {
         meta_body.extend_from_slice(&iloc);
         meta_body.extend_from_slice(&iinf);
         meta_body.extend_from_slice(&idat);
-        let meta = build_box(b"meta", &meta_body);
+        build_box(b"meta", &meta_body)
+    }
 
+    /// `ftyp` ボックスを組み立てる。`major_brand` は HEIC="mif1"（従来の骨格を維持）/
+    /// HEIF="heix"（実在する ISO HEIF の単画像 brand）/ AVIF="avif" で差し替える。
+    ///
+    /// kamadak-exif の isobmff パーサは major_brand 自体は見ず、`compatible_brands` に
+    /// "mif1"/"msf1" が含まれるかだけで HEIF ファミリーと判定する
+    /// （kamadak-exif-0.6.1 `src/isobmff.rs` の `HEIF_BRANDS`/`parse_ftyp`）。そのため
+    /// AVIF フィクスチャの compatible_brands にも "mif1" を含める（実在の AVIF ファイルも
+    /// HEIF 対応リーダーとの互換のため "mif1" を compatible brand に含めるのが通例）。
+    fn build_ftyp_box(major_brand: &[u8; 4], compatible_brands: &[&[u8; 4]]) -> Vec<u8> {
         let mut ftyp_body = Vec::new();
-        ftyp_body.extend_from_slice(b"mif1"); // major_brand
+        ftyp_body.extend_from_slice(major_brand);
         ftyp_body.extend_from_slice(&[0, 0, 0, 0]); // minor_version
-        ftyp_body.extend_from_slice(b"mif1"); // compatible_brands
-        let ftyp = build_box(b"ftyp", &ftyp_body);
+        for brand in compatible_brands {
+            ftyp_body.extend_from_slice(*brand);
+        }
+        build_box(b"ftyp", &ftyp_body)
+    }
+
+    /// kamadak-exif が受理する最小の HEIC/HEIF/AVIF（ISO BMFF/HEIF）ファイルを手で組み立てる。
+    ///
+    /// 構成は kamadak-exif 自身のユニットテスト（`isobmff.rs` の `unknown_before_ftyp`）と
+    /// 同じ `ftyp` + `meta{iloc,iinf,idat}` の最小骨格を土台にする。3形式の差は `ftyp` の
+    /// brand だけで、EXIF ペイロード（`build_exif_tiff`）は共通（#31 セルフレビュー S3）。
+    fn build_heif_family_with_exif(
+        major_brand: &[u8; 4],
+        compatible_brands: &[&[u8; 4]],
+    ) -> Vec<u8> {
+        let tiff = build_exif_tiff();
+        let meta = build_meta_box(&tiff);
+        let ftyp = build_ftyp_box(major_brand, compatible_brands);
 
         let mut file = Vec::new();
         file.extend_from_slice(&ftyp);
@@ -331,13 +364,21 @@ mod tests {
         file
     }
 
-    #[test]
-    fn get_exif_info_reads_date_orientation_and_dimensions_from_heic() {
-        let path = std::env::temp_dir().join("photo_returns_heic_exif_fixture.heic");
-        fs::write(&path, build_heic_with_exif()).expect("write HEIC fixture");
+    fn build_heic_with_exif() -> Vec<u8> {
+        build_heif_family_with_exif(b"mif1", &[b"mif1"])
+    }
 
-        let info = get_exif_info(&path).expect("get_exif_info should not error on valid HEIC");
+    fn build_heif_with_exif() -> Vec<u8> {
+        build_heif_family_with_exif(b"heix", &[b"mif1"])
+    }
 
+    fn build_avif_with_exif() -> Vec<u8> {
+        build_heif_family_with_exif(b"avif", &[b"avif", b"mif1"])
+    }
+
+    /// 3形式共通の期待値を検証する。`build_heif_family_with_exif` が同じ `build_exif_tiff`
+    /// を使うため、date/subsec/timezone/orientation/width/height は形式によらず同じになる。
+    fn assert_probe_fixture_exif(info: &ExifInfo) {
         assert_eq!(
             info.date,
             Local
@@ -346,7 +387,7 @@ mod tests {
                         .unwrap()
                 )
                 .single(),
-            "DateTimeOriginal should be parsed from the HEIC Exif TIFF"
+            "DateTimeOriginal should be parsed"
         );
         assert_eq!(info.subsec, Some(123), "SubSecTimeOriginal should be read");
         assert_eq!(
@@ -357,6 +398,41 @@ mod tests {
         assert_eq!(info.orientation, Some(6), "Orientation should be read");
         assert_eq!(info.width, Some(1920), "PixelXDimension should be read");
         assert_eq!(info.height, Some(1080), "PixelYDimension should be read");
+    }
+
+    #[test]
+    fn get_exif_info_reads_date_orientation_and_dimensions_from_heic() {
+        let path = std::env::temp_dir().join("photo_returns_heic_exif_fixture.heic");
+        fs::write(&path, build_heic_with_exif()).expect("write HEIC fixture");
+
+        let info = get_exif_info(&path).expect("get_exif_info should not error on valid HEIC");
+        assert_probe_fixture_exif(&info);
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn get_exif_info_reads_date_orientation_and_dimensions_from_heif() {
+        // major_brand="heix"（HEIC の "mif1" と異なる）でも kamadak-exif は
+        // compatible_brands の "mif1" だけを見るため同じように読める（#31 S3）。
+        let path = std::env::temp_dir().join("photo_returns_heif_exif_fixture.heif");
+        fs::write(&path, build_heif_with_exif()).expect("write HEIF fixture");
+
+        let info = get_exif_info(&path).expect("get_exif_info should not error on valid HEIF");
+        assert_probe_fixture_exif(&info);
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn get_exif_info_reads_date_orientation_and_dimensions_from_avif() {
+        // AVIF は major_brand が "avif" で HEIC/HEIF と異なる（レビュー指摘）。
+        // compatible_brands に "mif1" を含めれば kamadak-exif は同じ経路で読める。
+        let path = std::env::temp_dir().join("photo_returns_avif_exif_fixture.avif");
+        fs::write(&path, build_avif_with_exif()).expect("write AVIF fixture");
+
+        let info = get_exif_info(&path).expect("get_exif_info should not error on valid AVIF");
+        assert_probe_fixture_exif(&info);
 
         let _ = fs::remove_file(&path);
     }
