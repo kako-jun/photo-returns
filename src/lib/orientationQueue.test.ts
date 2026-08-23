@@ -12,8 +12,14 @@ import {
   type OrientationDirection,
 } from './orientationQueue';
 
-/** テスト用に MediaInfo を最小フィールドで組み立てる。 */
+/**
+ * テスト用に MediaInfo を最小フィールドで組み立てる。
+ * `supports_lossless_rotation` の既定値は path の拡張子（heic/heif/avif なら false）から
+ * 推定する。バックエンドがスキャン時に計算する値のテスト用スタンドインであり、
+ * orientationQueue.ts 自身はもう拡張子解析をしない（#31 セルフレビュー S2）。
+ */
 function media(path: string, over: Partial<MediaInfo> = {}): MediaInfo {
+  const extension = path.split('.').pop()?.toLowerCase() ?? '';
   return {
     original_path: path,
     file_name: path.split(/[\\/]/).pop() ?? path,
@@ -35,6 +41,7 @@ function media(path: string, over: Partial<MediaInfo> = {}): MediaInfo {
     rotation_applied: false,
     width: null,
     height: null,
+    supports_lossless_rotation: !['heic', 'heif', 'avif'].includes(extension),
     logs: [],
     ...over,
   };
@@ -49,21 +56,15 @@ describe('isMirrorOrientation', () => {
 });
 
 describe('supportsLosslessRotation', () => {
-  it('heic/heif/avif は非対応（大文字小文字は問わない）', () => {
-    expect(supportsLosslessRotation('/a.heic')).toBe(false);
-    expect(supportsLosslessRotation('/a.HEIC')).toBe(false);
-    expect(supportsLosslessRotation('/a.heif')).toBe(false);
-    expect(supportsLosslessRotation('/a.avif')).toBe(false);
-  });
-
-  it('既存対応形式は対応のまま', () => {
-    for (const ext of ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff', 'tif', 'JPG']) {
-      expect(supportsLosslessRotation(`/a.${ext}`)).toBe(true);
-    }
-  });
-
-  it('拡張子なしは対応扱い（空文字はブラックリストに含まれない）', () => {
-    expect(supportsLosslessRotation('/noext')).toBe(true);
+  // 拡張子リストの正本は Rust（`orientation::supports_lossless_rotation`）単独（#31 S2）。
+  // ここでは「バックエンドが載せた値をそのまま読むだけ」であることだけを確認する。
+  it('media.supports_lossless_rotation の値をそのまま返す', () => {
+    expect(supportsLosslessRotation(media('/a.heic', { supports_lossless_rotation: false }))).toBe(
+      false
+    );
+    expect(supportsLosslessRotation(media('/a.jpg', { supports_lossless_rotation: true }))).toBe(
+      true
+    );
   });
 });
 

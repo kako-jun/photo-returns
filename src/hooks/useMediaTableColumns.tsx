@@ -510,8 +510,8 @@ export function useMediaTableColumns({
         header: 'Rotate',
         cell: (info) => {
           const media = info.row.original;
-          const { exif_orientation, original_path } = media;
-          const rotationSupported = supportsLosslessRotation(original_path);
+          const { exif_orientation } = media;
+          const rotationSupported = supportsLosslessRotation(media);
           const rotationMode = effectiveRotationMode(media);
           const exifDegreesLabel = getOrientationDegrees(exif_orientation);
 

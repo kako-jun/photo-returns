@@ -82,7 +82,7 @@ export function ProcessingFlow({ media }: { media: MediaInfo }) {
   // （orientation::supports_lossless_rotation, #31）、rotation_mode の値によらず
   // 「pending のまま」ではなく明示的に skip として表示する。判定は Rotate 列・After
   // プレビューと同じ orientationQueue.ts の関数を再利用する。
-  const rotationSupported = supportsLosslessRotation(media.original_path);
+  const rotationSupported = supportsLosslessRotation(media);
   const rotationMode = effectiveRotationMode(media);
   if (!rotationSupported) {
     steps.push({

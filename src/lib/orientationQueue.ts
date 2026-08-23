@@ -31,11 +31,16 @@ export function isMirrorOrientation(orientation: number | null): boolean {
  * HEIC/HEIF/AVIF は EXIF は読めるが `image` crate がデコードできず backend がロスレス回転を
  * skip する（Rust 側 `orientation::supports_lossless_rotation` と同じ判定、#31）。
  * iPhone の HEIC は Orientation≠1 が大量にあるため、除外しないと「人間が4方向で確定したのに
- * 何も起きない」という体験になる。大文字小文字は問わない。
+ * 何も起きない」という体験になる。
+ *
+ * 拡張子の対応リストは Rust 単独を正本とし（スキャン時に `MediaSource.supports_lossless_rotation`
+ * として1回だけ計算される）、ここでは文字列解析をせずその値を読むだけにする。2言語に正本が
+ * 分かれるドリフトを避けるため（#31 セルフレビュー S2。#5 の `timezone_offset` 型不一致と同根）。
  */
-export function supportsLosslessRotation(path: string): boolean {
-  const extension = path.split('.').pop()?.toLowerCase() ?? '';
-  return !['heic', 'heif', 'avif'].includes(extension);
+export function supportsLosslessRotation(
+  media: Pick<MediaInfo, 'supports_lossless_rotation'>
+): boolean {
+  return media.supports_lossless_rotation;
 }
 
 /**
@@ -72,9 +77,9 @@ export type RotationMode = AbsoluteRotationMode | 'exif';
  * EXIF Orientation≠1 の時だけ 'exif' を既定にする。
  */
 export function effectiveRotationMode(
-  media: Pick<MediaInfo, 'rotation_mode' | 'exif_orientation' | 'original_path'>
+  media: Pick<MediaInfo, 'rotation_mode' | 'exif_orientation' | 'supports_lossless_rotation'>
 ): RotationMode {
-  if (!supportsLosslessRotation(media.original_path)) return 'none';
+  if (!supportsLosslessRotation(media)) return 'none';
   return (
     media.rotation_mode ??
     (media.exif_orientation && media.exif_orientation !== 1 ? 'exif' : 'none')
@@ -88,7 +93,7 @@ export function effectiveRotationMode(
  * プレビューは回らない（回さない実態と一致、#31）。
  */
 export function rotationDisplayDegrees(
-  media: Pick<MediaInfo, 'rotation_mode' | 'exif_orientation' | 'original_path'>
+  media: Pick<MediaInfo, 'rotation_mode' | 'exif_orientation' | 'supports_lossless_rotation'>
 ): number {
   switch (effectiveRotationMode(media)) {
     case 'exif':
@@ -119,7 +124,7 @@ export function selectOrientationQueue(media: MediaInfo[]): MediaInfo[] {
       m.exif_orientation !== null &&
       m.exif_orientation !== 1 &&
       !isMirrorOrientation(m.exif_orientation) &&
-      supportsLosslessRotation(m.original_path)
+      supportsLosslessRotation(m)
   );
 }
 
