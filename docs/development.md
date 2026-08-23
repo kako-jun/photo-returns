@@ -476,9 +476,10 @@ npm run format:rust:check  # rustfmt チェック
 ```
 
 **Pre-commit フック:**
-- **Husky + lint-staged** によりコミット時に自動実行
+- **Husky + lint-staged** によりコミット時に自動実行（整形結果は lint-staged が自動で再ステージする）
 - TypeScript/React: ESLint + Prettier
-- Rust: rustfmt + clippy
+- Rust: rustfmt（clippy はビルドを伴い遅いため pre-commit では実行せず CI に任せる）
+- `git worktree` で作った作業ディレクトリでは `npm run prepare` を実行しないと hook が無言で無効になる（詳細は `CLAUDE.md`）
 - 詳細は `LINT_SETUP.md` を参照
 
 ### ビルド & リリース

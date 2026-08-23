@@ -44,6 +44,7 @@ cd src-tauri && cargo test  # Rust tests
 ## Key Conventions
 
 - Pre-commit hooks: Husky + lint-staged (ESLint + Prettier for TS, rustfmt for Rust)。clippy はビルドを伴い遅いため pre-commit では実行せず CI に任せる
+- **`git worktree` で作業ディレクトリを作ったら、そこで最初に `npm run prepare` を実行する。** husky v9 は hooks を `.husky/_`（gitignore 対象、`prepare`=`husky` コマンドが生成）に向けており、worktree にはこのディレクトリが存在しない。`node_modules` を共有クローンから symlink しただけでは `.husky/_` は生成されない（`prepare` は `npm install`/`npm ci` のライフサイクルでしか走らない）。この状態では git は pre-commit hook を**エラーも警告も出さずに黙って無視する**ため、rustfmt/lint-staged が一切走らず、未整形の Rust コードがそのままコミットできてしまう（#38 の「未整形コミット」を起こしうる別経路。忘れると気づかずに再発する）
 - `chrono` requires `serde` feature for DateTime serialization
 - `kamadak-exif` is imported as `exif`
 - `img-parts` requires `use` for `ImageEXIF` trait
