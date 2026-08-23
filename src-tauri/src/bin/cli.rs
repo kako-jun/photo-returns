@@ -34,6 +34,7 @@ fn main() {
         timezone_offset: None,
         cleanup_temp: false,
         auto_correct_orientation: false,
+        exclude_system_artifacts: true, // 既定ON（#28）。フラグでの切り替えは追って配線
     };
 
     println!("Input:  {}", input_dir.display());

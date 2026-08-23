@@ -15,6 +15,7 @@ use crate::orientation;
 use crate::video_metadata;
 
 mod dating;
+mod exclude;
 mod exif_info;
 mod layout;
 
@@ -39,6 +40,9 @@ pub struct ProcessOptions {
     pub cleanup_temp: bool,
     /// 画像の向きを自動修正
     pub auto_correct_orientation: bool,
+    /// システム生成物（Android の `.trashed-*`、`.thumbnails`、`.nomedia`、AppleDouble、
+    /// OS メタデータ）を scan_media の入口で除外する（#28）。既定 ON。
+    pub exclude_system_artifacts: bool,
 }
 
 impl Default for ProcessOptions {
@@ -50,6 +54,7 @@ impl Default for ProcessOptions {
             timezone_offset: None,
             cleanup_temp: false,
             auto_correct_orientation: false,
+            exclude_system_artifacts: true,
         }
     }
 }
@@ -176,6 +181,23 @@ pub struct ProcessResult {
     pub processed_files: usize,
     pub media: Vec<MediaInfo>,
     pub errors: Vec<String>,
+}
+
+/// 除外ルール1件分の件数（#28）。ルールの並び順を安定させるため HashMap ではなく Vec で持つ。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExcludedRuleCount {
+    pub rule: String,
+    pub count: usize,
+}
+
+/// scan_media で除外されたファイルのサマリ（#28）。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ExcludedSummary {
+    pub total: usize,
+    /// ルール別件数。0件のルールは含まない。並び順は仕様の表の順で固定。
+    pub by_rule: Vec<ExcludedRuleCount>,
+    /// 除外された相対パスのサンプル（先頭20件まで）。
+    pub samples: Vec<String>,
 }
 
 /// 進捗イベント（ファイル1件完了ごとにフロントへ送る、#4）
@@ -931,6 +953,7 @@ mod tests {
             "timezone_offset",
             "cleanup_temp",
             "auto_correct_orientation",
+            "exclude_system_artifacts",
         ]
         .into_iter()
         .collect();

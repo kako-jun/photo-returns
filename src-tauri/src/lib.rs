@@ -73,6 +73,8 @@ fn process_media_with_settings(
         timezone_offset: None,
         cleanup_temp,
         auto_correct_orientation: false, // rotation_mode は各 MediaInfo に含まれる
+        // 事前スキャン済みリストを処理するだけで自身は scan しないため無関係（#28）。
+        ..Default::default()
     };
 
     let mut media = media_list;
