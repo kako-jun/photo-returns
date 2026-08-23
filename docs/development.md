@@ -392,7 +392,7 @@ output/
 - `MainLayout.tsx` (442行) - レイアウト・プレゼンテーション層
 - `DirectorySelection.tsx` - ディレクトリ選択UI
 - `DefaultSettings.tsx` - デフォルト設定パネル
-- `ProcessingFlow.tsx` (255行) - 処理フロー詳細表示（9ステップ）
+- `ProcessingFlow.tsx` (265行) - 処理フロー詳細表示（9ステップ）
 - `ProcessSummary.tsx` - 処理結果サマリー + Retryボタン
 - `LogViewer.tsx` (193行) - ログ表示モーダル
 - `LightBox.tsx` - 画像ライトボックス
