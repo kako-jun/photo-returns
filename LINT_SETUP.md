@@ -97,7 +97,7 @@ git commit -m "test commit"
 
 fmt / clippy / check は互いに独立した判定のため、どれか1つが失敗しても残りは実行され、1回のCI実行で全ての失敗が見えます（fmt失敗がビルドエラーを隠さないようにするための構成）。
 
-### リリースビルド時のチェック (.github/workflows/build-release.yml)
+### リリースビルド時のチェック (.github/workflows/release.yml)
 
 リリースビルド時にも同様のチェックが実行されます。
 

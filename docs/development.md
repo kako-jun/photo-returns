@@ -501,7 +501,7 @@ npm run format:rust:check  # rustfmt チェック
 リリースはドラフトとして作成されるため、公開前に内容を確認・編集できます。
 
 **設定ファイル:**
-- `.github/workflows/build-release.yml` - ビルドワークフロー定義
+- `.github/workflows/release.yml` - リリースビルドワークフロー定義
 - `src-tauri/tauri.conf.json` - アプリ設定（バージョン、識別子等）
 
 ## 既知の問題と解決策
