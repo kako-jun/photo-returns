@@ -18,9 +18,10 @@ mod dating;
 mod exclude;
 mod exif_info;
 mod layout;
+mod provenance;
 
 use dating::{
-    extract_date_from_filename, format_filename, get_file_created_date, get_file_modified_date,
+    build_stem, extract_date_from_filename, get_file_created_date, get_file_modified_date,
 };
 use exif_info::{get_exif_info, is_image_file, is_video_file, ExifInfo};
 use layout::{create_backup, create_date_hierarchy, create_unsorted_dir};
@@ -50,6 +51,13 @@ pub struct ProcessOptions {
     /// システム生成物（Android の `.trashed-*`、`.thumbnails`、`.nomedia`、AppleDouble、
     /// OS メタデータ）を scan_media の入口で除外する（#28）。既定 ON。
     pub exclude_system_artifacts: bool,
+    /// 由来タグの明示ラベル（#29）。非空なら全ファイルの出力名にこのタグを使う。
+    /// サニタイズ後に空、または2桁の純数字になる値は `scan_media` がエラーを返す。既定 `None`。
+    pub provenance_tag: Option<String>,
+    /// `provenance_tag` が未指定のとき、ファイルの直上の親フォルダ名（入力ディレクトリ直下
+    /// なら入力ディレクトリ自身の名前）を由来タグとして使うフォールバックを有効にする（#29）。
+    /// 既定 `false`（＝タグは付かず、出力は #29 導入前と1バイトも変わらない）。
+    pub provenance_from_folder: bool,
 }
 
 impl Default for ProcessOptions {
@@ -62,6 +70,8 @@ impl Default for ProcessOptions {
             cleanup_temp: false,
             auto_correct_orientation: false,
             exclude_system_artifacts: true,
+            provenance_tag: None,
+            provenance_from_folder: false,
         }
     }
 }
@@ -147,6 +157,11 @@ pub struct DerivedOutput {
     pub burst_group_id: Option<usize>,
     /// バーストグループ内のインデックス（1始まり）
     pub burst_index: Option<usize>,
+    /// この1件に対して解決済みの由来タグ（#29）。`ProcessOptions.provenance_tag`（生の明示
+    /// ラベル設定）とは別物: こちらは scan 時に明示ラベル／フォルダ由来フォールバックから
+    /// 実際に決まった、サニタイズ済みの最終値。`new_name` に反映済みだが、TZ補正・衝突時の
+    /// ファイル名再生成でも一貫してこの値を使うために保持する。
+    pub resolved_provenance_tag: Option<String>,
 }
 
 /// ユーザー選択（フロントエンドで設定）
@@ -278,6 +293,26 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
         (all_entries, ExcludedSummary::default())
     };
 
+    // 由来タグの明示ラベル（#29）は実行全体で1回だけ検証する。非空なのにサニタイズ後に
+    // 使えない値（空になる／2桁の純数字）ならスキャン自体をエラーにする（フォルダ由来の
+    // 自動導出と違い、明示入力の不正はユーザーに直接気づいてほしいため握り潰さない）。
+    let explicit_provenance_tag: Option<String> = match options
+        .provenance_tag
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(raw) => match provenance::sanitize_tag(raw) {
+            Some(tag) => Some(tag),
+            None => {
+                return Err(anyhow::anyhow!(
+                    "由来タグ '{raw}' は使用できません（サニタイズ後に空になるか、衝突/バースト連番と紛らわしい2桁の純数字になるため）"
+                ));
+            }
+        },
+        None => None,
+    };
+
     let media = Arc::new(Mutex::new(Vec::new()));
 
     let processor = |entry: &walkdir::DirEntry| {
@@ -327,6 +362,23 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
             // ファイル名を取得
             let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
+            // 由来タグを解決（#29）。明示ラベルが最優先、無ければ options.provenance_from_folder
+            // が有効なときだけフォルダ由来（直上の親フォルダ名、入力ディレクトリ直下なら
+            // 入力ディレクトリ自身の名前）にフォールバックする。
+            let relative_for_tag = path.strip_prefix(input_dir).unwrap_or(path);
+            let folder_tag_candidate =
+                provenance::parent_folder_name(relative_for_tag).or_else(|| {
+                    input_dir
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|s| s.to_string())
+                });
+            let (provenance_tag, provenance_tag_warning) = provenance::resolve_tag_for_file(
+                explicit_provenance_tag.as_deref(),
+                options.provenance_from_folder,
+                folder_tag_candidate.as_deref(),
+            );
+
             // 各候補の日付を取得
             let exif_date = exif_info.date;
             let video_date = video_meta
@@ -353,15 +405,32 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
             };
 
             {
-                let new_name = if let Some(date) = date_taken {
-                    format_filename(&date, subsec, &extension)
-                } else {
-                    // 日付なし: 元のファイル名をそのまま使用（unsortedフォルダへ）
-                    filename.to_string()
+                let new_name = match (date_taken, &provenance_tag) {
+                    (Some(date), _) => {
+                        format!(
+                            "{}.{extension}",
+                            build_stem(Some(&date), subsec, None, "", provenance_tag.as_deref())
+                        )
+                    }
+                    // 日付なし・タグなし: 元のファイル名をそのまま使用（#29 既定OFF互換。
+                    // unsortedフォルダへ）
+                    (None, None) => filename.to_string(),
+                    // 日付なし・タグあり: 元ファイルの stem にタグだけ付与する
+                    (None, Some(tag)) => {
+                        let fallback_stem = Path::new(filename)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or(filename);
+                        let stem = build_stem(None, None, None, fallback_stem, Some(tag));
+                        match Path::new(filename).extension().and_then(|e| e.to_str()) {
+                            Some(ext) => format!("{stem}.{ext}"),
+                            None => stem,
+                        }
+                    }
                 };
                 let file_size = fs::metadata(path).ok().map(|m| m.len()).unwrap_or(0);
 
-                let info = MediaInfo {
+                let mut info = MediaInfo {
                     source: MediaSource {
                         original_path: path.to_path_buf(),
                         file_name: path.file_name().unwrap().to_string_lossy().to_string(),
@@ -393,6 +462,7 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
                         rotation_applied: false, // スキャン時はまだ回転していない
                         burst_group_id: None,
                         burst_index: None,
+                        resolved_provenance_tag: provenance_tag,
                     },
                     overrides: UserOverrides {
                         timezone_offset: None, // ユーザー未選択（フロントエンドで設定）
@@ -400,6 +470,11 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
                     },
                     logs: Vec::new(), // ログは空で初期化
                 };
+                // フォルダ由来のタグ候補がサニタイズで拒否された場合はここで警告ログを残す
+                // （タグなしへフォールバック済み、処理は継続する）。
+                if let Some(warning) = provenance_tag_warning {
+                    info.add_log(LogLevel::Warning, warning);
+                }
 
                 media.lock().unwrap().push(info);
             }
@@ -437,7 +512,8 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
                 media_info.derived.burst_group_id = Some(group.id);
                 media_info.derived.burst_index = Some(idx + 1); // 1始まり
 
-                // ファイル名に連番を追加
+                // ファイル名に連番を追加（#29: stem 生成は build_stem に一本化。タグは
+                // バースト連番の後に付く）
                 if let Some(date) = media_info.dates.date_taken {
                     let extension = media_info
                         .source
@@ -446,15 +522,14 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
                         .and_then(|e| e.to_str())
                         .unwrap_or("jpg");
 
-                    // ベースファイル名を生成（拡張子なし）
-                    let base_name = if let Some(ms) = media_info.dates.subsec_time {
-                        format!("{}-{:03}", date.format("%Y-%m-%d_%H-%M-%S"), ms)
-                    } else {
-                        date.format("%Y-%m-%d_%H-%M-%S").to_string()
-                    };
-
-                    media_info.derived.new_name =
-                        format!("{}_{:02}.{}", base_name, idx + 1, extension);
+                    let stem = build_stem(
+                        Some(&date),
+                        media_info.dates.subsec_time,
+                        Some(idx + 1),
+                        "",
+                        media_info.derived.resolved_provenance_tag.as_deref(),
+                    );
+                    media_info.derived.new_name = format!("{stem}.{extension}");
                 }
             }
         }
@@ -552,7 +627,16 @@ fn apply_timezone_correction(item: &mut MediaInfo) {
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
-    item.derived.new_name = format_filename(&corrected, item.dates.subsec_time, extension);
+    // #29: build_stem に一本化。TZ補正で日時が変わっても、scan時に確定した
+    // バースト連番・由来タグはそのまま引き継ぐ（そうしないと再構築のたびに消えてしまう）。
+    let stem = build_stem(
+        Some(&corrected),
+        item.dates.subsec_time,
+        item.derived.burst_index,
+        "",
+        item.derived.resolved_provenance_tag.as_deref(),
+    );
+    item.derived.new_name = format!("{stem}.{extension}");
     item.add_log(
         LogLevel::Info,
         format!(
@@ -723,6 +807,9 @@ where
                 let mut candidate = target_dir.join(&item.derived.new_name);
                 let mut counter = 1u32;
 
+                // #29: base_name（stem）の生成は build_stem に一本化。バースト連番・由来タグを
+                // 含めたまま衝突連番を末尾に付与する（そうしないと衝突時にタグ・バーストが
+                // 消えて別ファイルの名前と再衝突しかねない）。
                 while candidate.exists() {
                     let extension = item
                         .source
@@ -730,24 +817,23 @@ where
                         .extension()
                         .and_then(|e| e.to_str())
                         .unwrap_or("");
+                    // 日付なし: 元のファイル名のステム部分をフォールバックに使う
+                    let fallback_stem = item
+                        .source
+                        .original_path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("unknown");
 
-                    let base_name = if let Some(date) = item.dates.date_taken {
-                        if let Some(ms) = item.dates.subsec_time {
-                            format!("{}-{:03}", date.format("%Y-%m-%d_%H-%M-%S"), ms)
-                        } else {
-                            date.format("%Y-%m-%d_%H-%M-%S").to_string()
-                        }
-                    } else {
-                        // 日付なし: 元のファイル名のステム部分を使う
-                        item.source
-                            .original_path
-                            .file_stem()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or("unknown")
-                            .to_string()
-                    };
+                    let stem = build_stem(
+                        item.dates.date_taken.as_ref(),
+                        item.dates.subsec_time,
+                        item.derived.burst_index,
+                        fallback_stem,
+                        item.derived.resolved_provenance_tag.as_deref(),
+                    );
 
-                    candidate = target_dir.join(format!("{base_name}_{counter:02}.{extension}"));
+                    candidate = target_dir.join(format!("{stem}_{counter:02}.{extension}"));
                     counter += 1;
                 }
 
@@ -879,10 +965,11 @@ mod tests {
 
     /// フロントエンド契約の機械検証:
     /// MediaInfo はサブ構造体に分割したが `#[serde(flatten)]` により
-    /// JSON は flat な 23 キーのまま（`src/types.ts` の `interface MediaInfo`）。
+    /// JSON は flat な 24 キーのまま（`src/types.ts` の `interface MediaInfo`。#29 で
+    /// `resolved_provenance_tag` が加わり 23→24 キーになった）。
     /// このテストが落ちたらフロントが壊れるサイン。
     #[test]
-    fn mediainfo_wire_format_is_flat_23_keys() {
+    fn mediainfo_wire_format_is_flat_24_keys() {
         let info = MediaInfo {
             source: MediaSource {
                 original_path: PathBuf::from("/tmp/in.jpg"),
@@ -909,6 +996,7 @@ mod tests {
                 rotation_applied: false,
                 burst_group_id: None,
                 burst_index: None,
+                resolved_provenance_tag: None,
             },
             overrides: UserOverrides {
                 timezone_offset: None,
@@ -939,6 +1027,7 @@ mod tests {
             "file_size",
             "burst_group_id",
             "burst_index",
+            "resolved_provenance_tag",
             "date_source",
             "exif_orientation",
             "rotation_applied",
@@ -953,12 +1042,12 @@ mod tests {
 
         assert_eq!(
             actual, expected,
-            "MediaInfo の top-level JSON キーがフロント契約（23キー flat）と一致しません"
+            "MediaInfo の top-level JSON キーがフロント契約（24キー flat）と一致しません"
         );
         assert_eq!(
             actual.len(),
-            23,
-            "MediaInfo の top-level キーは 23 個のはず"
+            24,
+            "MediaInfo の top-level キーは 24 個のはず"
         );
     }
 
@@ -986,6 +1075,8 @@ mod tests {
             "cleanup_temp",
             "auto_correct_orientation",
             "exclude_system_artifacts",
+            "provenance_tag",
+            "provenance_from_folder",
         ]
         .into_iter()
         .collect();
@@ -1123,11 +1214,12 @@ mod tests {
                 date_source: DateSource::Exif,
             },
             derived: DerivedOutput {
-                new_name: format_filename(&date, subsec, "jpg"),
+                new_name: format!("{}.jpg", build_stem(Some(&date), subsec, None, "", None)),
                 new_path: PathBuf::new(),
                 rotation_applied: false,
                 burst_group_id: None,
                 burst_index: None,
+                resolved_provenance_tag: None,
             },
             overrides: UserOverrides {
                 timezone_offset: tz_override.map(|s| s.to_string()),

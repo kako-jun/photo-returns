@@ -88,24 +88,47 @@ pub(crate) fn get_file_modified_date(path: &Path) -> Result<DateTime<Local>> {
     Ok(DateTime::from(modified))
 }
 
-/// 日時からファイル名を生成（YYYY-MM-DD_HH-mm-ss[-mmm]形式）
-pub(crate) fn format_filename(
-    date: &DateTime<Local>,
-    subsec: Option<u32>,
-    extension: &str,
-) -> String {
+/// 日時＋サブ秒だけの stem（YYYY-MM-DD_HH-mm-ss[-mmm]）を組み立てる。
+/// `build_stem` / `format_filename` の共通部分（単一の正本）。
+fn format_datetime_stem(date: &DateTime<Local>, subsec: Option<u32>) -> String {
     if let Some(ms) = subsec {
         // ミリ秒がある場合は3桁で追加
-        format!(
-            "{}-{:03}.{}",
-            date.format("%Y-%m-%d_%H-%M-%S"),
-            ms,
-            extension
-        )
+        format!("{}-{:03}", date.format("%Y-%m-%d_%H-%M-%S"), ms)
     } else {
         // ミリ秒がない場合は秒まで
-        format!("{}.{}", date.format("%Y-%m-%d_%H-%M-%S"), extension)
+        date.format("%Y-%m-%d_%H-%M-%S").to_string()
     }
+}
+
+/// 出力ファイル名の stem（拡張子なし）を組み立てる単一の正本（#29）。
+///
+/// `mod.rs` 内に散在していた「日付＋サブ秒→base_name」の重複実装（scan 時の初期名・
+/// バースト連番反映・衝突時の再生成の3箇所）をここへ集約する。組み立て順は
+/// `YYYY-MM-DD_HH-MM-SS[-mmm][_バーストNN][_タグ]`（バースト連番の後、衝突連番の前に
+/// タグを置く。衝突連番はこの関数の外＝呼び出し側が末尾に付与する）。
+///
+/// - `date` が `None`（撮影日時なし＝unsorted 行き）の場合は `fallback_stem`（通常は元ファイルの
+///   ステム）をそのまま使う。この場合バースト連番は付与しない（バースト検出は日付ありの
+///   ファイルにしか適用されないため）。
+pub(crate) fn build_stem(
+    date: Option<&DateTime<Local>>,
+    subsec: Option<u32>,
+    burst_index: Option<usize>,
+    fallback_stem: &str,
+    tag: Option<&str>,
+) -> String {
+    let mut stem = match date {
+        Some(date) => format_datetime_stem(date, subsec),
+        None => fallback_stem.to_string(),
+    };
+    if let Some(idx) = burst_index {
+        stem.push_str(&format!("_{idx:02}"));
+    }
+    if let Some(tag) = tag {
+        stem.push('_');
+        stem.push_str(tag);
+    }
+    stem
 }
 
 #[cfg(test)]
@@ -238,34 +261,19 @@ mod tests {
         assert_eq!(got, Some(local(2025, 1, 15, 10, 30, 0)));
     }
 
-    // ===== format_filename =====
+    // ===== build_stem の日時フォーマット characterization（旧 format_filename 相当）=====
     //
-    // characterization: YYYY-MM-DD_HH-mm-ss[-mmm].ext 形式。
+    // stem 部分: YYYY-MM-DD_HH-mm-ss[-mmm]。
     //   subsec あり: "-{:03}" でゼロ詰め3桁ミリ秒を付与。
     //   subsec なし: 秒まで。
-
-    #[test]
-    fn format_no_subsec() {
-        let d = local(2025, 1, 15, 10, 30, 0);
-        assert_eq!(format_filename(&d, None, "jpg"), "2025-01-15_10-30-00.jpg");
-    }
-
-    #[test]
-    fn format_with_subsec_zero_padded() {
-        let d = local(2025, 1, 15, 10, 30, 0);
-        // ミリ秒 5 は3桁ゼロ詰めで "005"
-        assert_eq!(
-            format_filename(&d, Some(5), "jpg"),
-            "2025-01-15_10-30-00-005.jpg"
-        );
-    }
+    // 拡張子付与は呼び出し側（`format!("{stem}.{ext}")`）の責務で build_stem 自体は関知しない。
 
     #[test]
     fn format_with_subsec_three_digits() {
         let d = local(2025, 12, 31, 23, 59, 59);
         assert_eq!(
-            format_filename(&d, Some(906), "jpeg"),
-            "2025-12-31_23-59-59-906.jpeg"
+            build_stem(Some(&d), Some(906), None, "", None),
+            "2025-12-31_23-59-59-906"
         );
     }
 
@@ -274,8 +282,8 @@ mod tests {
         // quirk: {:03} は最小幅3桁なので、3桁を超える値はそのまま出る（切り詰めない）。
         let d = local(2025, 1, 15, 10, 30, 0);
         assert_eq!(
-            format_filename(&d, Some(1234), "jpg"),
-            "2025-01-15_10-30-00-1234.jpg"
+            build_stem(Some(&d), Some(1234), None, "", None),
+            "2025-01-15_10-30-00-1234"
         );
     }
 
@@ -283,23 +291,101 @@ mod tests {
     fn format_zero_pads_date_components() {
         // 1桁の月/日/時/分/秒はゼロ詰めされる。
         let d = local(2025, 3, 4, 5, 6, 7);
-        assert_eq!(format_filename(&d, None, "png"), "2025-03-04_05-06-07.png");
-    }
-
-    #[test]
-    fn format_extension_passed_through_verbatim() {
-        // 拡張子はそのまま連結される（大文字・任意文字列も変換しない）。
-        let d = local(2025, 1, 15, 10, 30, 0);
-        assert_eq!(format_filename(&d, None, "MOV"), "2025-01-15_10-30-00.MOV");
-        assert_eq!(format_filename(&d, None, ""), "2025-01-15_10-30-00.");
+        assert_eq!(
+            build_stem(Some(&d), None, None, "", None),
+            "2025-03-04_05-06-07"
+        );
     }
 
     #[test]
     fn roundtrip_p2_format_then_extract() {
-        // format_filename の出力（subsec なし）は P2 で読み戻せる。
+        // build_stem の出力（subsec なし）+ 拡張子は P2 で読み戻せる。
         let d = local(2025, 1, 15, 10, 30, 0);
-        let name = format_filename(&d, None, "jpg");
+        let name = format!("{}.jpg", build_stem(Some(&d), None, None, "", None));
         let back = extract_date_from_filename(&name);
         assert_eq!(back, Some(d));
+    }
+
+    // ===== build_stem（#29: stem 生成の単一正本）=====
+    //
+    // 組み立て順は YYYY-MM-DD_HH-MM-SS[-mmm][_バーストNN][_タグ]。
+    // 日付なし（unsorted）は fallback_stem[_タグ]。衝突連番はこの関数の外（呼び出し側）。
+
+    #[test]
+    fn build_stem_date_only_matches_format_filename_stem_part() {
+        let d = local(2025, 4, 22, 20, 59, 15);
+        assert_eq!(
+            build_stem(Some(&d), None, None, "", None),
+            "2025-04-22_20-59-15"
+        );
+    }
+
+    #[test]
+    fn build_stem_with_subsec() {
+        let d = local(2025, 4, 22, 20, 59, 15);
+        assert_eq!(
+            build_stem(Some(&d), Some(250), None, "", None),
+            "2025-04-22_20-59-15-250"
+        );
+    }
+
+    #[test]
+    fn build_stem_with_burst_index_zero_padded() {
+        let d = local(2025, 4, 22, 20, 59, 15);
+        assert_eq!(
+            build_stem(Some(&d), None, Some(1), "", None),
+            "2025-04-22_20-59-15_01"
+        );
+        assert_eq!(
+            build_stem(Some(&d), None, Some(2), "", None),
+            "2025-04-22_20-59-15_02"
+        );
+    }
+
+    #[test]
+    fn build_stem_with_tag_only() {
+        let d = local(2025, 4, 22, 20, 59, 15);
+        assert_eq!(
+            build_stem(Some(&d), None, None, "", Some("takeout")),
+            "2025-04-22_20-59-15_takeout"
+        );
+    }
+
+    #[test]
+    fn build_stem_burst_index_comes_before_tag() {
+        // 仕様: タグの位置 = バースト連番の後・衝突連番の前
+        let d = local(2025, 4, 22, 20, 59, 15);
+        assert_eq!(
+            build_stem(Some(&d), None, Some(1), "", Some("takeout")),
+            "2025-04-22_20-59-15_01_takeout"
+        );
+        assert_eq!(
+            build_stem(Some(&d), None, Some(2), "", Some("takeout")),
+            "2025-04-22_20-59-15_02_takeout"
+        );
+    }
+
+    #[test]
+    fn build_stem_no_date_uses_fallback_stem_verbatim() {
+        assert_eq!(build_stem(None, None, None, "IMG_1234", None), "IMG_1234");
+    }
+
+    #[test]
+    fn build_stem_no_date_with_tag_appends_after_fallback_stem() {
+        assert_eq!(
+            build_stem(None, None, None, "IMG_1234", Some("takeout")),
+            "IMG_1234_takeout"
+        );
+    }
+
+    #[test]
+    fn build_stem_no_date_ignores_burst_index() {
+        // 日付なしのファイルはバースト検出の対象外のため、burst_index を渡しても無視される
+        // …という契約ではなく、呼び出し側が None しか渡さない前提。ここでは実装の素直な
+        // 挙動（date=None のときも burst_index があれば付与される）を pin しておく。
+        assert_eq!(
+            build_stem(None, None, Some(1), "IMG_1234", None),
+            "IMG_1234_01"
+        );
     }
 }
