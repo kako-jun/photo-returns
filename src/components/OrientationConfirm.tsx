@@ -187,7 +187,7 @@ export function OrientationConfirm({
               }}
               fallback={
                 <div className="flex h-full w-full flex-col items-center justify-center gap-2">
-                  <HiPhoto className="h-16 w-16" style={{ color: '#333' }} />
+                  <HiPhoto className="h-24 w-24" style={{ color: '#333' }} />
                   <p
                     className="led-display text-xs"
                     style={{ color: '#aa6600', textShadow: '0 0 6px rgba(180,120,0,0.4)' }}
