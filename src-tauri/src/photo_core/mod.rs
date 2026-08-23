@@ -1001,6 +1001,101 @@ mod tests {
         );
     }
 
+    /// フロントエンド契約の機械検証（#28）:
+    /// `scan_media` コマンドの戻り値 `ScanOutcome` はフロントで
+    /// `const { media, excluded } = await invoke<ScanOutcome>(...)` と分割代入される
+    /// （`src/App.tsx`）。トップレベルキー名（media/excluded）と、その内側の
+    /// `ExcludedSummary`（total/by_rule/samples）・`ExcludedRuleCount`（rule/count）の
+    /// キー名変更をここで検知する。
+    #[test]
+    fn scan_outcome_wire_format_top_level_keys() {
+        let outcome = ScanOutcome {
+            media: Vec::new(),
+            excluded: ExcludedSummary {
+                total: 2,
+                by_rule: vec![ExcludedRuleCount {
+                    rule: "trashed".to_string(),
+                    count: 2,
+                }],
+                samples: vec!["DCIM/.trashed-1.jpg".to_string()],
+            },
+        };
+        let value = serde_json::to_value(&outcome).expect("serialize ScanOutcome");
+        let obj = value
+            .as_object()
+            .expect("ScanOutcome must serialize to a JSON object");
+
+        let keys: BTreeSet<&str> = obj.keys().map(|k| k.as_str()).collect();
+        assert_eq!(
+            keys,
+            BTreeSet::from(["media", "excluded"]),
+            "ScanOutcome のトップレベルキーは media/excluded のはず"
+        );
+
+        let excluded_obj = obj["excluded"]
+            .as_object()
+            .expect("excluded must be an object");
+        let excluded_keys: BTreeSet<&str> = excluded_obj.keys().map(|k| k.as_str()).collect();
+        assert_eq!(
+            excluded_keys,
+            BTreeSet::from(["total", "by_rule", "samples"]),
+            "ExcludedSummary のキーは total/by_rule/samples のはず"
+        );
+
+        let rule_count_obj = excluded_obj["by_rule"][0]
+            .as_object()
+            .expect("by_rule[0] must be an object");
+        let rule_count_keys: BTreeSet<&str> = rule_count_obj.keys().map(|k| k.as_str()).collect();
+        assert_eq!(
+            rule_count_keys,
+            BTreeSet::from(["rule", "count"]),
+            "ExcludedRuleCount のキーは rule/count のはず"
+        );
+    }
+
+    /// `process_media_with_list` / `process_media_with_list_progress` は事前スキャン済みの
+    /// リストを受け取って処理するだけで自身は scan しないため、`exclude_system_artifacts` の
+    /// 値に関わらず `ProcessResult::excluded_files` は常に 0（#28）。この契約を固定する。
+    #[test]
+    fn process_media_with_list_excluded_files_is_always_zero() {
+        let tmp = std::env::temp_dir().join(format!(
+            "photo_returns_excluded_zero_test_{}",
+            std::process::id()
+        ));
+        let out_dir = tmp.join("out");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&out_dir).unwrap();
+
+        // exclude_system_artifacts=true でも scan を伴わない経路では 0 のまま。
+        let mut media = vec![tz_item(local_dt(2024, 1, 1, 12, 0, 0), None, None, None)];
+        let options_on = ProcessOptions {
+            parallel: false,
+            exclude_system_artifacts: true,
+            ..Default::default()
+        };
+        let result = process_media_with_list(&mut media, &out_dir, &options_on).unwrap();
+        assert_eq!(
+            result.excluded_files, 0,
+            "exclude_system_artifacts=true でも0のはず"
+        );
+
+        // exclude_system_artifacts=false でも同様（進捗版でも同じ契約）。
+        let mut media2 = vec![tz_item(local_dt(2024, 1, 1, 12, 0, 0), None, None, None)];
+        let options_off = ProcessOptions {
+            parallel: false,
+            exclude_system_artifacts: false,
+            ..Default::default()
+        };
+        let result2 =
+            process_media_with_list_progress(&mut media2, &out_dir, &options_off, |_| {}).unwrap();
+        assert_eq!(
+            result2.excluded_files, 0,
+            "exclude_system_artifacts=false でも0のはず"
+        );
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
     fn local_dt(y: i32, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> DateTime<Local> {
         Local.with_ymd_and_hms(y, mo, d, h, mi, s).single().unwrap()
     }

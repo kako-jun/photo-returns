@@ -141,6 +141,29 @@ pub(crate) fn partition(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+    use walkdir::WalkDir;
+
+    /// テスト専用の一時ディレクトリを作る（既存があれば削除してから作り直す）。
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("pr_exclude_unit_{tag}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// 実ファイルを書いたディレクトリを WalkDir で辿り、`partition` の入力用 DirEntry 列を返す。
+    /// `DirEntry` は walkdir がディスク走査でしか作れないため、`partition` 単体テストは
+    /// 実ファイルを介する必要がある。
+    fn walk_files(dir: &Path) -> Vec<DirEntry> {
+        WalkDir::new(dir)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_file())
+            .collect()
+    }
 
     #[test]
     fn classifies_trashed_by_filename_prefix() {
@@ -189,5 +212,128 @@ mod tests {
     #[test]
     fn ordinary_media_file_is_not_excluded() {
         assert_eq!(classify_excluded(Path::new("DCIM/IMG_0001.jpg")), None);
+    }
+
+    /// ルール優先順位の交差（1ファイルが複数ルールに該当し得るとき、どのルール名で集計
+    /// されるか）を固定する回帰テスト。実装の if-else 順（trashed → thumbnails →
+    /// nomedia → apple_double → os_metadata）に依存する暗黙知なので、if 文の並び替えで
+    /// 静かに挙動が変わるのをここで検知する。
+    #[test]
+    fn rule_priority_when_multiple_rules_could_match() {
+        let cases: [(&str, ExcludeRule); 5] = [
+            (".thumbnails/.trashed-123.jpg", ExcludeRule::Trashed),
+            (".thumbnails/.nomedia", ExcludeRule::Thumbnails),
+            (".thumbnails/._IMG.jpg", ExcludeRule::Thumbnails),
+            (".thumbnails/Thumbs.db", ExcludeRule::Thumbnails),
+            (".thumbnails/.DS_Store", ExcludeRule::Thumbnails),
+        ];
+        for (path, expected) in cases {
+            assert_eq!(
+                classify_excluded(Path::new(path)),
+                Some(expected),
+                "path={path} の分類ルールが期待と食い違う"
+            );
+        }
+    }
+
+    /// 大文字表記は除外されないことを意図的仕様として固定する（Issue で合意済みの
+    /// case-sensitive 判定）。将来「大文字小文字を無視する」修正が無自覚に入るのを検知する。
+    #[test]
+    fn uppercase_variants_are_not_excluded_case_sensitive_by_design() {
+        assert_eq!(classify_excluded(Path::new("DCIM/.TRASHED-123.jpg")), None);
+        assert_eq!(
+            classify_excluded(Path::new("DCIM/.Thumbnails/foo.jpg")),
+            None
+        );
+    }
+
+    /// サンプル配列20件の境界値。`<` と `<=` の取り違えを狙い撃つ核心テスト。
+    /// samples は先頭20件で頭打ちになるが、total / by_rule の count はそれとは独立に
+    /// 正確な件数を保つはず。
+    #[test]
+    fn partition_caps_samples_at_20_but_total_and_by_rule_stay_exact() {
+        for (n, expected_samples) in [(19usize, 19usize), (20, 20), (21, 20)] {
+            let dir = temp_dir(&format!("samples_{n}"));
+            for i in 0..n {
+                std::fs::write(dir.join(format!(".trashed-{i:03}.jpg")), b"x").unwrap();
+            }
+
+            let (kept, summary) = partition(&dir, walk_files(&dir));
+
+            assert!(
+                kept.is_empty(),
+                "trashed だけなので kept は空のはず (n={n})"
+            );
+            assert_eq!(
+                summary.total, n,
+                "total は samples 上限と独立に正確 (n={n})"
+            );
+            assert_eq!(
+                summary.samples.len(),
+                expected_samples,
+                "samples は20件で頭打ちのはず (n={n})"
+            );
+            assert_eq!(summary.by_rule.len(), 1);
+            assert_eq!(
+                summary.by_rule[0].count, n,
+                "by_rule の count も samples 上限と無関係に正確 (n={n})"
+            );
+
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    /// `by_rule` の合計と `total` の不変条件。将来ルール追加時に `ExcludeRule::all()` の
+    /// 更新漏れで `total` と `by_rule` の合計が静かにズレるのを防ぐ回帰テスト。
+    #[test]
+    fn by_rule_counts_sum_to_total() {
+        let dir = temp_dir("sum_invariant");
+        std::fs::write(dir.join(".trashed-1.jpg"), b"x").unwrap();
+        std::fs::write(dir.join(".trashed-2.jpg"), b"x").unwrap();
+        let thumbs = dir.join(".thumbnails");
+        std::fs::create_dir_all(&thumbs).unwrap();
+        std::fs::write(thumbs.join("a.jpg"), b"x").unwrap();
+        std::fs::write(dir.join(".nomedia"), b"x").unwrap();
+        std::fs::write(dir.join("._IMG.jpg"), b"x").unwrap();
+        std::fs::write(dir.join(".DS_Store"), b"x").unwrap();
+        std::fs::write(dir.join("Thumbs.db"), b"x").unwrap();
+        std::fs::write(dir.join("IMG_0001.jpg"), b"x").unwrap(); // 通常ファイル（除外されない）
+
+        let (kept, summary) = partition(&dir, walk_files(&dir));
+
+        assert_eq!(kept.len(), 1, "通常ファイル1件だけ kept されるはず");
+        let sum: usize = summary.by_rule.iter().map(|rc| rc.count).sum();
+        assert_eq!(
+            sum, summary.total,
+            "by_rule の合計は total と一致するはず（ルール追加漏れの回帰検知）"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 日本語ファイル名混在。`.thumbnails/思い出の写真.jpg` のような非ASCIIを含む相対パスで
+    /// 判定（thumbnails ルール）とサンプル文字列化（to_string_lossy）が壊れないこと。
+    #[test]
+    fn japanese_filename_is_classified_and_sampled_without_corruption() {
+        let dir = temp_dir("japanese");
+        let thumbs = dir.join(".thumbnails");
+        std::fs::create_dir_all(&thumbs).unwrap();
+        std::fs::write(thumbs.join("思い出の写真.jpg"), b"x").unwrap();
+
+        let (kept, summary) = partition(&dir, walk_files(&dir));
+
+        assert!(kept.is_empty());
+        assert_eq!(summary.total, 1);
+        assert_eq!(summary.by_rule[0].rule, "thumbnails");
+        assert!(
+            summary
+                .samples
+                .iter()
+                .any(|s| s.contains("思い出の写真.jpg")),
+            "日本語ファイル名がサンプルに文字化けせず残るはず: {:?}",
+            summary.samples
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -382,3 +382,145 @@ fn e2e_exclude_system_artifacts_disabled_includes_trashed() {
     );
     assert_eq!(outcome.excluded.total, 0, "除外は行われないはず");
 }
+
+// ---------------------------------------------------------------------------
+// #28: exclude_system_artifacts=false なら .thumbnails 配下も拾う（後方互換）
+// ---------------------------------------------------------------------------
+#[test]
+fn e2e_exclude_system_artifacts_disabled_includes_thumbnails() {
+    let (input, _output) = workspace("exclude_disabled_thumbnails");
+    write_plain_jpeg(&input, "IMG_20240115_103000.jpg", 16, 16);
+    let thumbs_dir = input.join(".thumbnails");
+    std::fs::create_dir_all(&thumbs_dir).unwrap();
+    write_plain_jpeg(&thumbs_dir, "IMG.jpg", 8, 8);
+
+    let options = ProcessOptions {
+        parallel: false,
+        exclude_system_artifacts: false,
+        ..Default::default()
+    };
+    let outcome = scan_media(&input, &options).unwrap();
+    assert_eq!(
+        outcome.media.len(),
+        2,
+        "exclude_system_artifacts=false なら .thumbnails 配下も拾うはず"
+    );
+    assert_eq!(outcome.excluded.total, 0, "除外は行われないはず");
+}
+
+// ---------------------------------------------------------------------------
+// #28: exclude_system_artifacts=false なら AppleDouble（._*）も拾う（後方互換）
+// ---------------------------------------------------------------------------
+#[test]
+fn e2e_exclude_system_artifacts_disabled_includes_apple_double() {
+    let (input, _output) = workspace("exclude_disabled_apple_double");
+    write_plain_jpeg(&input, "IMG_20240115_103000.jpg", 16, 16);
+    write_plain_jpeg(&input, "._IMG.JPG", 16, 16);
+
+    let options = ProcessOptions {
+        parallel: false,
+        exclude_system_artifacts: false,
+        ..Default::default()
+    };
+    let outcome = scan_media(&input, &options).unwrap();
+    assert_eq!(
+        outcome.media.len(),
+        2,
+        "exclude_system_artifacts=false なら AppleDouble も拾うはず"
+    );
+    assert_eq!(outcome.excluded.total, 0, "除外は行われないはず");
+}
+
+// ---------------------------------------------------------------------------
+// #28: 入力ディレクトリ自身が ".thumbnails" という名前でも、直下の通常写真を
+// 誤って全除外してはいけない（strip_prefix で入力ディレクトリ自身の名前は相対パスに
+// 現れないことの安全確認。classify_excluded の単体テストは常に「既に相対パス化された
+// 文字列」しか渡していないため、この経路は partition() を通さないと検証できない）。
+// ---------------------------------------------------------------------------
+#[test]
+fn e2e_input_dir_itself_named_thumbnails_does_not_exclude_everything() {
+    let base = std::env::temp_dir().join(format!(
+        "pr_e2e_input_self_thumbnails_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&base);
+    let input = base.join(".thumbnails");
+    std::fs::create_dir_all(&input).unwrap();
+    write_plain_jpeg(&input, "IMG_0001.jpg", 16, 16);
+
+    let outcome = scan_media(&input, &opts()).unwrap();
+    assert_eq!(
+        outcome.excluded.total, 0,
+        "入力ディレクトリ自身の名前を理由に誤って全除外してはいけない"
+    );
+    assert_eq!(outcome.media.len(), 1, "直下の通常写真はスキャンされるはず");
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+// ---------------------------------------------------------------------------
+// #28: 入力ディレクトリ自身が "._" で始まる名前（例 "._icloud_backup"）でも、
+// 直下の通常写真を誤って全除外してはいけない
+// ---------------------------------------------------------------------------
+#[test]
+fn e2e_input_dir_itself_named_apple_double_prefix_does_not_exclude_everything() {
+    let base = std::env::temp_dir().join(format!(
+        "pr_e2e_input_self_appledouble_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&base);
+    let input = base.join("._icloud_backup");
+    std::fs::create_dir_all(&input).unwrap();
+    write_plain_jpeg(&input, "IMG_0001.jpg", 16, 16);
+
+    let outcome = scan_media(&input, &opts()).unwrap();
+    assert_eq!(
+        outcome.excluded.total, 0,
+        "入力ディレクトリ自身の名前を理由に誤って全除外してはいけない"
+    );
+    assert_eq!(outcome.media.len(), 1, "直下の通常写真はスキャンされるはず");
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+// ---------------------------------------------------------------------------
+// #28: バースト検出と除外の共存。連続バースト写真の時系列に .trashed-* を紛れ込ませても、
+// 除外後の burst_group_id / burst_index が正しく 1..3 の連番になる
+// （Issue本文が名指しした「burstに干渉しないこと」の回帰テスト）
+// ---------------------------------------------------------------------------
+#[test]
+fn e2e_exclusion_does_not_interfere_with_burst_detection() {
+    let (input, _output) = workspace("exclude_burst");
+    // 3枚のバースト写真（1秒間隔。burst設定既定: max_interval_seconds=3, min_count=3）
+    write_plain_jpeg(&input, "IMG_20240115_100000.jpg", 16, 16);
+    write_plain_jpeg(&input, "IMG_20240115_100001.jpg", 16, 16);
+    write_plain_jpeg(&input, "IMG_20240115_100002.jpg", 16, 16);
+    // 時系列の間に紛れ込むゴミ。除外され、バーストの並びに影響しないはず。
+    write_plain_jpeg(&input, ".trashed-1699999999.jpg", 16, 16);
+
+    let outcome = scan_media(&input, &opts()).unwrap();
+    assert_eq!(outcome.media.len(), 3, "バースト3枚だけが残るはず");
+    assert_eq!(outcome.excluded.total, 1, "ゴミ1件が除外されるはず");
+
+    let burst_group_ids: Vec<Option<usize>> = outcome
+        .media
+        .iter()
+        .map(|m| m.derived.burst_group_id)
+        .collect();
+    assert!(
+        burst_group_ids.iter().all(|gid| *gid == Some(0)),
+        "3枚とも同じバーストグループのはず: {burst_group_ids:?}"
+    );
+
+    let mut burst_indices: Vec<usize> = outcome
+        .media
+        .iter()
+        .map(|m| m.derived.burst_index.expect("burst_index はあるはず"))
+        .collect();
+    burst_indices.sort_unstable();
+    assert_eq!(
+        burst_indices,
+        vec![1, 2, 3],
+        "除外後も burst_index は 1..3 の連番のはず"
+    );
+}
