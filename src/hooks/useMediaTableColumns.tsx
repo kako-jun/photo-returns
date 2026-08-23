@@ -17,6 +17,7 @@ import {
   effectiveRotationMode,
   rotationDisplayDegrees,
 } from '../lib/orientationQueue';
+import { ImageWithFallback } from '../components/ImageWithFallback';
 
 const columnHelper = createColumnHelper<MediaInfo>();
 
@@ -126,30 +127,24 @@ export function useMediaTableColumns({
                 style={{ display: 'block' }}
                 title="Click to view full size"
               >
-                <img
+                <ImageWithFallback
                   src={assetUrl}
                   alt="thumbnail"
                   className="h-14 w-14 cursor-pointer object-cover transition-opacity hover:opacity-75"
                   style={{ display: 'block' }}
                   loading="lazy"
-                  onError={(e) => {
-                    // webview がデコードできない形式（HEIC/HEIF/AVIF 等）はレイアウトを
-                    // 崩さずプレースホルダに差し替える（#31）。
-                    e.currentTarget.style.display = 'none';
-                    const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
-                    if (fallback) fallback.style.display = 'flex';
-                  }}
+                  fallback={
+                    <div
+                      className="flex h-14 w-14 flex-col items-center justify-center gap-0.5"
+                      title={`Preview not available: ${extLabel}`}
+                    >
+                      <HiPhoto className="h-6 w-6" style={{ color: '#444' }} />
+                      <span className="led-display" style={{ fontSize: '0.5rem', color: '#555' }}>
+                        {extLabel || 'N/A'}
+                      </span>
+                    </div>
+                  }
                 />
-                <div
-                  className="h-14 w-14 flex-col items-center justify-center gap-0.5"
-                  style={{ display: 'none' }}
-                  title={`Preview not available: ${extLabel}`}
-                >
-                  <HiPhoto className="h-6 w-6" style={{ color: '#444' }} />
-                  <span className="led-display" style={{ fontSize: '0.5rem', color: '#555' }}>
-                    {extLabel || 'N/A'}
-                  </span>
-                </div>
               </button>
             );
           } else {
@@ -638,7 +633,7 @@ export function useMediaTableColumns({
             const extLabel = (originalPath.split('.').pop() || '').toUpperCase();
             return (
               <div className="thumb-slot flex h-14 w-14 items-center justify-center overflow-hidden rounded-sm">
-                <img
+                <ImageWithFallback
                   src={assetUrl}
                   alt="rotated preview"
                   style={{
@@ -653,24 +648,18 @@ export function useMediaTableColumns({
                     display: 'block',
                   }}
                   loading="lazy"
-                  onError={(e) => {
-                    // webview がデコードできない形式（HEIC/HEIF/AVIF 等）はレイアウトを
-                    // 崩さずプレースホルダに差し替える（#31）。
-                    e.currentTarget.style.display = 'none';
-                    const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
-                    if (fallback) fallback.style.display = 'flex';
-                  }}
+                  fallback={
+                    <div
+                      className="flex h-14 w-14 flex-col items-center justify-center gap-0.5"
+                      title={`Preview not available: ${extLabel}`}
+                    >
+                      <HiPhoto className="h-6 w-6" style={{ color: '#444' }} />
+                      <span className="led-display" style={{ fontSize: '0.5rem', color: '#555' }}>
+                        {extLabel || 'N/A'}
+                      </span>
+                    </div>
+                  }
                 />
-                <div
-                  className="h-14 w-14 flex-col items-center justify-center gap-0.5"
-                  style={{ display: 'none' }}
-                  title={`Preview not available: ${extLabel}`}
-                >
-                  <HiPhoto className="h-6 w-6" style={{ color: '#444' }} />
-                  <span className="led-display" style={{ fontSize: '0.5rem', color: '#555' }}>
-                    {extLabel || 'N/A'}
-                  </span>
-                </div>
               </div>
             );
           } else {
