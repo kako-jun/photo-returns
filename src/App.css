@@ -335,6 +335,55 @@
 }
 
 /* ============================================================
+   Checkbox — recessed LED window toggle (#28)
+   ============================================================ */
+.checkbox-hardware {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, #1a1a1a 0%, #222 40%, #2a2a2a 100%);
+  border: 1px solid #555;
+  border-top-color: #333;
+  border-bottom-color: #666;
+  border-radius: 2px;
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.6),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.08s ease;
+}
+
+.checkbox-hardware:checked {
+  background: linear-gradient(180deg, #1a2a1a 0%, #1e321e 40%, #223a22 100%);
+  border-color: #2a8a2a;
+}
+
+.checkbox-hardware:checked::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  background: #44ff44;
+  box-shadow: 0 0 4px rgba(68, 255, 68, 0.8);
+}
+
+.checkbox-hardware:focus {
+  outline: none;
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(180, 150, 80, 0.4);
+}
+
+.checkbox-hardware:active {
+  transform: translateY(1px);
+}
+
+/* ============================================================
    Input fields — recessed display
    ============================================================ */
 .input-recessed {

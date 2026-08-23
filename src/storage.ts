@@ -10,6 +10,8 @@ export interface StorageData {
   theme?: 'dark' | 'light';
   inputDir?: string;
   outputDir?: string;
+  // システム生成物の除外トグル（#28）。既定 true。
+  excludeSystemArtifacts?: boolean;
 }
 
 /** localStorage から全データを読み込む */

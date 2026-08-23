@@ -16,6 +16,11 @@ interface DefaultSettingsProps {
   onVideoDateSourceChange: (value: 'Exif' | 'FileName' | 'FileCreated' | 'FileModified') => void;
   onVideoTimezoneOffsetChange: (value: string) => void;
   onVideoRotationModeChange: (value: 'none' | 'exif' | '90' | '180' | '270') => void;
+
+  // System settings — photo/video のどちらのチャンネルにも属さない全体設定（#28）
+  /** システム生成物を scan_media で除外するかどうか。既定 true。 */
+  excludeSystemArtifacts: boolean;
+  onExcludeSystemArtifactsChange: (value: boolean) => void;
 }
 
 function SelectorRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -72,6 +77,8 @@ export function DefaultSettings({
   onVideoDateSourceChange,
   onVideoTimezoneOffsetChange,
   onVideoRotationModeChange,
+  excludeSystemArtifacts,
+  onExcludeSystemArtifactsChange,
 }: DefaultSettingsProps) {
   return (
     <div
@@ -91,6 +98,26 @@ export function DefaultSettings({
             background: 'linear-gradient(90deg, #707070, transparent)',
           }}
         />
+      </div>
+
+      {/* システム生成物の除外トグル（#28）。写真/動画どちらのチャンネルにも属さない
+          全体設定なので、2カラムグリッド（Photo/Video）の外に独立行として置く。 */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <label className="flex cursor-pointer items-center gap-2">
+          <input
+            type="checkbox"
+            checked={excludeSystemArtifacts}
+            onChange={(e) => onExcludeSystemArtifactsChange(e.target.checked)}
+            className="checkbox-hardware"
+          />
+          <span className="label-channel">EXCLUDE SYSTEM ARTIFACTS</span>
+        </label>
+        <span
+          className="text-[0.6rem]"
+          style={{ color: '#888', fontFamily: '"Courier New", monospace' }}
+        >
+          (.trashed-*, .thumbnails/, .nomedia, ._*, .DS_Store, Thumbs.db)
+        </span>
       </div>
 
       <div className="grid grid-cols-2 gap-4">

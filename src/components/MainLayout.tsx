@@ -33,6 +33,9 @@ interface MainLayoutProps {
   onVideoDateSourceChange: (value: 'Exif' | 'FileName' | 'FileCreated' | 'FileModified') => void;
   onVideoTimezoneOffsetChange: (value: string) => void;
   onVideoRotationModeChange: (value: 'none' | 'exif' | '90' | '180' | '270') => void;
+  /** システム生成物を scan_media で除外するかどうか（#28）。既定 true。 */
+  excludeSystemArtifacts: boolean;
+  onExcludeSystemArtifactsChange: (value: boolean) => void;
   onScanMedia: () => void;
   isScanning: boolean;
   onProcessMedia: () => void;
@@ -76,6 +79,8 @@ export function MainLayout({
   onVideoDateSourceChange,
   onVideoTimezoneOffsetChange,
   onVideoRotationModeChange,
+  excludeSystemArtifacts,
+  onExcludeSystemArtifactsChange,
   onScanMedia,
   isScanning,
   onProcessMedia,
@@ -151,6 +156,8 @@ export function MainLayout({
               onVideoDateSourceChange={onVideoDateSourceChange}
               onVideoTimezoneOffsetChange={onVideoTimezoneOffsetChange}
               onVideoRotationModeChange={onVideoRotationModeChange}
+              excludeSystemArtifacts={excludeSystemArtifacts}
+              onExcludeSystemArtifactsChange={onExcludeSystemArtifactsChange}
             />
 
             {/* Action buttons — transport section */}

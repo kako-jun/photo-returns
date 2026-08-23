@@ -41,6 +41,12 @@ function App() {
     if (MOCK_ENABLED) return 'C:\\Output';
     return getStorageValue('outputDir') || '';
   });
+  // システム生成物（.trashed-*, .thumbnails/, .nomedia, ._*, .DS_Store, Thumbs.db）を
+  // scan_media で除外するかどうか（#28）。既定 ON。
+  const [excludeSystemArtifacts, setExcludeSystemArtifactsState] = useState<boolean>(() => {
+    const stored = getStorageValue('excludeSystemArtifacts');
+    return stored ?? true;
+  });
   const [mediaList, setMediaList] = useState<MediaInfo[]>(MOCK_ENABLED ? mockMediaList : []);
   const [isScanning, setIsScanning] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -178,6 +184,12 @@ function App() {
     }
   };
 
+  // システム生成物除外トグルの変更（#28）。state 更新と永続化を同時に行う。
+  const setExcludeSystemArtifacts = (value: boolean) => {
+    setExcludeSystemArtifactsState(value);
+    saveStorage({ excludeSystemArtifacts: value });
+  };
+
   // スキャン
   const scanMedia = async () => {
     if (!inputDir) {
@@ -191,7 +203,7 @@ function App() {
         inputDir,
         includeVideos: true,
         parallel: true,
-        excludeSystemArtifacts: true,
+        excludeSystemArtifacts,
       });
       setExcludedSummary(excluded);
 
@@ -482,6 +494,8 @@ function App() {
         onVideoDateSourceChange={setDefaultVideoDateSource}
         onVideoTimezoneOffsetChange={setDefaultVideoTimezoneOffset}
         onVideoRotationModeChange={setDefaultVideoRotationMode}
+        excludeSystemArtifacts={excludeSystemArtifacts}
+        onExcludeSystemArtifactsChange={setExcludeSystemArtifacts}
         onScanMedia={scanMedia}
         isScanning={isScanning}
         onProcessMedia={processMedia}
