@@ -148,6 +148,16 @@ fmt / clippy / check は互いに独立した判定のため、どれか1つが�
 npm run prepare
 ```
 
+husky v9 は `core.hooksPath` を `.husky/_` に向けるが、この `_` ディレクトリは
+`npm run prepare` が生成するもので **gitignore 対象**。存在しない場合、git は
+pre-commit フックを**エラーも警告も出さずに黙って無視する**（コミットは普通に成功し、
+rustfmt も lint-staged も走らない）。
+
+特に **`git worktree` で作った作業ディレクトリでは必ずこの状態になる**。
+`node_modules` を共有クローンから symlink しただけでは足りない（`prepare` は
+`npm install` / `npm ci` のライフサイクルでしか走らない）。worktree を作ったら
+最初に `npm run prepare` を実行すること。
+
 ### ESLint エラー
 
 ```bash

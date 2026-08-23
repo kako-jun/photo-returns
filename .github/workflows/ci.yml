@@ -77,7 +77,9 @@ jobs:
       - name: Rust clippy
         if: always() && steps.system_deps.outcome == 'success'
         working-directory: src-tauri
-        run: cargo clippy -- -D warnings
+        # --all-targets でテスト・bin ターゲットまで検査する。
+        # これが無いと tests/ と src/bin/ の警告を CI が見逃す。
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Rust check
         id: rust_check
