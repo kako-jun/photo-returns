@@ -361,6 +361,7 @@ output/
 **純粋ロジック (src/lib/):**
 - `processResults.ts` - 処理結果マージ・進捗・リトライ対象抽出（vitest 固定）
 - `orientationQueue.ts` - 方向確認の対象抽出・4方向→絶対回転角の写像（vitest 固定・#7 Phase C）
+- `newName.ts` - New Name 列プレビュー用 stem 組み立て（backend `build_stem` と同じ順序。vitest 固定・#29）
 
 **型定義:**
 - `types.ts` - MediaInfo, ProcessResult, LogEntry等

@@ -12,6 +12,7 @@ import {
   HiOutlineSquare3Stack3D,
 } from 'react-icons/hi2';
 import type { MediaInfo } from '../types';
+import { calculateNewName } from '../lib/newName';
 
 const columnHelper = createColumnHelper<MediaInfo>();
 
@@ -658,39 +659,9 @@ export function useMediaTableColumns({
           const newPath = media.new_path;
           const hasNewPath = newPath && newPath !== '';
 
-          const calculateNewName = (): string => {
-            const dateTaken = media.date_taken;
-            if (!dateTaken) return 'unknown_date';
-            let d = new Date(dateTaken);
-            const selectedOffset = media.timezone_offset ?? 'none';
-            const exifTimezone = media.timezone;
-            let offsetToUse = selectedOffset;
-            if (selectedOffset === 'exif' && exifTimezone) offsetToUse = exifTimezone;
-            if (offsetToUse !== 'none' && offsetToUse !== 'exif') {
-              const match = offsetToUse.match(/([+-])(\d{2}):(\d{2})/);
-              if (match) {
-                const sign = match[1] === '+' ? 1 : -1;
-                const hours = parseInt(match[2], 10);
-                const minutes = parseInt(match[3], 10);
-                d = new Date(d.getTime() + sign * (hours * 60 + minutes) * 60 * 1000);
-              }
-            }
-            const year = d.getFullYear();
-            const month = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            const hour = String(d.getHours()).padStart(2, '0');
-            const minute = String(d.getMinutes()).padStart(2, '0');
-            const second = String(d.getSeconds()).padStart(2, '0');
-            const extension = media.file_name.split('.').pop() || 'jpg';
-            if (media.subsec_time !== null && media.subsec_time !== undefined) {
-              const ms = String(media.subsec_time).padStart(3, '0');
-              return `${year}-${month}-${day}_${hour}-${minute}-${second}-${ms}.${extension}`;
-            } else {
-              return `${year}-${month}-${day}_${hour}-${minute}-${second}.${extension}`;
-            }
-          };
-
-          const newName = calculateNewName();
+          // stem 組み立ての詳細（日時→バースト連番→タグの順、衝突連番は含めない理由）は
+          // src/lib/newName.ts のコメントを参照（#29）。
+          const newName = calculateNewName(media);
           const hasNewName = newName && newName !== 'unknown_date';
 
           return (
