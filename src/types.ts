@@ -47,6 +47,28 @@ export interface ProcessResult {
   processed_files: number;
   media: MediaInfo[];
   errors: string[];
+  // scan 時にシステム生成物として除外されたファイル数（#28）。
+  // 事前スキャン済みリストを処理するだけの経路（リトライ等）では常に 0。
+  excluded_files: number;
+}
+
+// 除外ルール1件分の件数（#28）。並び順は仕様の表の順（0件のルールは含まない）。
+export interface ExcludedRuleCount {
+  rule: string;
+  count: number;
+}
+
+// scan_media で除外されたファイルのサマリ（#28）。
+export interface ExcludedSummary {
+  total: number;
+  by_rule: ExcludedRuleCount[];
+  samples: string[]; // 除外された相対パスのサンプル（先頭20件まで）
+}
+
+// scan_media の戻り値。スキャンされたメディアと除外サマリを両方持つ（#28）。
+export interface ScanOutcome {
+  media: MediaInfo[];
+  excluded: ExcludedSummary;
 }
 
 // ファイル1件完了ごとにバックエンド（Rust）から Channel 経由で届く進捗イベント（#4）。

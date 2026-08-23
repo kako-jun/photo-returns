@@ -8,8 +8,14 @@ import {
   ExpandedState,
 } from '@tanstack/react-table';
 import './App.css';
-import { MOCK_ENABLED, mockMediaList, mockProcessResult } from './mock-data';
-import type { MediaInfo, ProcessResult, ProgressEvent } from './types';
+import { MOCK_ENABLED, mockMediaList, mockProcessResult, mockExcludedSummary } from './mock-data';
+import type {
+  MediaInfo,
+  ProcessResult,
+  ProgressEvent,
+  ScanOutcome,
+  ExcludedSummary,
+} from './types';
 import {
   mergeProcessResults,
   selectRetryTargets,
@@ -35,6 +41,12 @@ function App() {
     if (MOCK_ENABLED) return 'C:\\Output';
     return getStorageValue('outputDir') || '';
   });
+  // システム生成物（.trashed-*, .thumbnails/, .nomedia, ._*, .DS_Store, Thumbs.db）を
+  // scan_media で除外するかどうか（#28）。既定 ON。
+  const [excludeSystemArtifacts, setExcludeSystemArtifactsState] = useState<boolean>(() => {
+    const stored = getStorageValue('excludeSystemArtifacts');
+    return stored ?? true;
+  });
   const [mediaList, setMediaList] = useState<MediaInfo[]>(MOCK_ENABLED ? mockMediaList : []);
   const [isScanning, setIsScanning] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -46,6 +58,10 @@ function App() {
   });
   const [processResult, setProcessResult] = useState<ProcessResult | null>(
     MOCK_ENABLED ? mockProcessResult : null
+  );
+  // scan_media で除外されたシステム生成物のサマリ（#28）。スキャンのたびに更新する。
+  const [excludedSummary, setExcludedSummary] = useState<ExcludedSummary | null>(
+    MOCK_ENABLED ? mockExcludedSummary : null
   );
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<ExpandedState>({});
@@ -168,6 +184,12 @@ function App() {
     }
   };
 
+  // システム生成物除外トグルの変更（#28）。state 更新と永続化を同時に行う。
+  const setExcludeSystemArtifacts = (value: boolean) => {
+    setExcludeSystemArtifactsState(value);
+    saveStorage({ excludeSystemArtifacts: value });
+  };
+
   // スキャン
   const scanMedia = async () => {
     if (!inputDir) {
@@ -177,14 +199,16 @@ function App() {
 
     setIsScanning(true);
     try {
-      const result = await invoke<MediaInfo[]>('scan_media', {
+      const { media, excluded } = await invoke<ScanOutcome>('scan_media', {
         inputDir,
         includeVideos: true,
         parallel: true,
+        excludeSystemArtifacts,
       });
+      setExcludedSummary(excluded);
 
       // 初期ステータスとデフォルト設定を適用（静止画と動画で分ける）
-      const mediaWithStatus = result.map((item: MediaInfo) => {
+      const mediaWithStatus = media.map((item: MediaInfo) => {
         const isPhoto = item.media_type === 'Photo';
         const preferredDateSource = isPhoto ? defaultPhotoDateSource : defaultVideoDateSource;
 
@@ -470,6 +494,8 @@ function App() {
         onVideoDateSourceChange={setDefaultVideoDateSource}
         onVideoTimezoneOffsetChange={setDefaultVideoTimezoneOffset}
         onVideoRotationModeChange={setDefaultVideoRotationMode}
+        excludeSystemArtifacts={excludeSystemArtifacts}
+        onExcludeSystemArtifactsChange={setExcludeSystemArtifacts}
         onScanMedia={scanMedia}
         isScanning={isScanning}
         onProcessMedia={processMedia}
@@ -479,6 +505,7 @@ function App() {
         progressTotal={progress.total}
         mediaList={mediaList}
         processResult={processResult}
+        excludedSummary={excludedSummary}
         table={table}
         columns={columns}
         lightboxIndex={lightboxIndex}

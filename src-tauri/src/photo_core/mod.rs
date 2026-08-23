@@ -15,6 +15,7 @@ use crate::orientation;
 use crate::video_metadata;
 
 mod dating;
+mod exclude;
 mod exif_info;
 mod layout;
 
@@ -23,6 +24,13 @@ use dating::{
 };
 use exif_info::{get_exif_info, is_image_file, is_video_file, ExifInfo};
 use layout::{create_backup, create_date_hierarchy, create_unsorted_dir};
+
+// `ExcludedRuleCount` / `ExcludedSummary` は `exclude.rs` が生成するデータなので定義もそちらに
+// 置く（#28 self-review S1）。外部から見える型パス（`photo_core::ExcludedSummary` 等）と
+// serde の wire 契約は変えないため、ここで再輸出する。`ExcludedRuleCount` は本体コードから
+// 直接使わない（`tests` サブモジュールでのみ使用）ため、非 test ビルドで unused import に
+// ならないよう `ExcludedSummary` だけを再輸出する。
+pub(crate) use exclude::ExcludedSummary;
 
 /// 処理オプション
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +47,9 @@ pub struct ProcessOptions {
     pub cleanup_temp: bool,
     /// 画像の向きを自動修正
     pub auto_correct_orientation: bool,
+    /// システム生成物（Android の `.trashed-*`、`.thumbnails`、`.nomedia`、AppleDouble、
+    /// OS メタデータ）を scan_media の入口で除外する（#28）。既定 ON。
+    pub exclude_system_artifacts: bool,
 }
 
 impl Default for ProcessOptions {
@@ -50,6 +61,7 @@ impl Default for ProcessOptions {
             timezone_offset: None,
             cleanup_temp: false,
             auto_correct_orientation: false,
+            exclude_system_artifacts: true,
         }
     }
 }
@@ -176,6 +188,22 @@ pub struct ProcessResult {
     pub processed_files: usize,
     pub media: Vec<MediaInfo>,
     pub errors: Vec<String>,
+    /// scan 時にシステム生成物として除外されたファイル数（#28）。
+    /// `process_media_with_list` / `process_media_with_list_progress` は事前スキャン済みの
+    /// リストを受け取るだけで自身は scan しないため常に 0。scan から行う `process_media` のみ
+    /// scan 結果の `ExcludedSummary::total` を反映する。
+    ///
+    /// GUI（`process_media_with_settings` 経由）は事前スキャン済みリストを処理する経路のため
+    /// **常に 0**。GUI が除外件数を表示したい場合はこのフィールドではなく、scan 時に
+    /// 受け取った `ScanOutcome.excluded` を見ること（`src/App.tsx` の `excludedSummary` 参照）。
+    pub excluded_files: usize,
+}
+
+/// `scan_media` の戻り値。スキャンされたメディアと除外サマリを両方持つ（#28）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanOutcome {
+    pub media: Vec<MediaInfo>,
+    pub excluded: ExcludedSummary,
 }
 
 /// 進捗イベント（ファイル1件完了ごとにフロントへ送る、#4）
@@ -230,13 +258,25 @@ impl MediaInfo {
 }
 
 /// 対象ディレクトリ内のメディアファイルをスキャン
-pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<MediaInfo>> {
-    let files: Vec<_> = WalkDir::new(input_dir)
+///
+/// `options.exclude_system_artifacts`（既定 true）が有効な場合、Android の `.trashed-*`・
+/// `.thumbnails` 配下・`.nomedia`・AppleDouble（`._*`）・OS メタデータ（`.DS_Store` /
+/// `Thumbs.db`）を、拡張子判定・EXIF読み・日付抽出・バースト検出より前に除外する（#28）。
+/// 除外されたファイルは `MediaInfo` を作らないため、バースト検出のインデックスにも混ざらない。
+/// 判定は入力ディレクトリからの相対パスに対して行う（`exclude::partition` 参照）。
+pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutcome> {
+    let all_entries: Vec<_> = WalkDir::new(input_dir)
         .follow_links(false)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_file())
         .collect();
+
+    let (files, excluded_summary) = if options.exclude_system_artifacts {
+        exclude::partition(input_dir, all_entries)
+    } else {
+        (all_entries, ExcludedSummary::default())
+    };
 
     let media = Arc::new(Mutex::new(Vec::new()));
 
@@ -420,7 +460,10 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
         }
     }
 
-    Ok(result)
+    Ok(ScanOutcome {
+        media: result,
+        excluded: excluded_summary,
+    })
 }
 
 /// タイムゾーン補正の基準オフセット（秒）。
@@ -546,13 +589,20 @@ where
 }
 
 /// メディアファイルをリネームして階層構造にコピー（再スキャンあり版、CLI用）
+///
+/// scan 時に除外されたシステム生成物の件数（#28）は `ProcessResult::excluded_files` に載せる。
 pub fn process_media(
     input_dir: &Path,
     output_dir: &Path,
     options: &ProcessOptions,
 ) -> Result<ProcessResult> {
-    let mut media = scan_media(input_dir, options)?;
-    process_media_inner(&mut media, output_dir, options, |_| {})
+    let ScanOutcome {
+        mut media,
+        excluded,
+    } = scan_media(input_dir, options)?;
+    let mut result = process_media_inner(&mut media, output_dir, options, |_| {})?;
+    result.excluded_files = excluded.total;
+    Ok(result)
 }
 
 /// メディアファイルをリネームして階層構造にコピー（内部実装）
@@ -815,11 +865,15 @@ where
         processed_files,
         media: media.clone(),
         errors: errors_vec,
+        // scan を伴わない呼び出し（事前スキャン済みリストを処理するだけ）では常に 0。
+        // `process_media` はこの後 scan 結果の `ExcludedSummary::total` で上書きする。
+        excluded_files: 0,
     })
 }
 
 #[cfg(test)]
 mod tests {
+    use super::exclude::ExcludedRuleCount;
     use super::*;
     use std::collections::BTreeSet;
 
@@ -931,6 +985,7 @@ mod tests {
             "timezone_offset",
             "cleanup_temp",
             "auto_correct_orientation",
+            "exclude_system_artifacts",
         ]
         .into_iter()
         .collect();
@@ -939,6 +994,101 @@ mod tests {
             actual, expected,
             "ProcessOptions の JSON キーが snake_case 契約と一致しません（rename_all を足すとフロント配線が壊れる）"
         );
+    }
+
+    /// フロントエンド契約の機械検証（#28）:
+    /// `scan_media` コマンドの戻り値 `ScanOutcome` はフロントで
+    /// `const { media, excluded } = await invoke<ScanOutcome>(...)` と分割代入される
+    /// （`src/App.tsx`）。トップレベルキー名（media/excluded）と、その内側の
+    /// `ExcludedSummary`（total/by_rule/samples）・`ExcludedRuleCount`（rule/count）の
+    /// キー名変更をここで検知する。
+    #[test]
+    fn scan_outcome_wire_format_top_level_keys() {
+        let outcome = ScanOutcome {
+            media: Vec::new(),
+            excluded: ExcludedSummary {
+                total: 2,
+                by_rule: vec![ExcludedRuleCount {
+                    rule: "trashed".to_string(),
+                    count: 2,
+                }],
+                samples: vec!["DCIM/.trashed-1.jpg".to_string()],
+            },
+        };
+        let value = serde_json::to_value(&outcome).expect("serialize ScanOutcome");
+        let obj = value
+            .as_object()
+            .expect("ScanOutcome must serialize to a JSON object");
+
+        let keys: BTreeSet<&str> = obj.keys().map(|k| k.as_str()).collect();
+        assert_eq!(
+            keys,
+            BTreeSet::from(["media", "excluded"]),
+            "ScanOutcome のトップレベルキーは media/excluded のはず"
+        );
+
+        let excluded_obj = obj["excluded"]
+            .as_object()
+            .expect("excluded must be an object");
+        let excluded_keys: BTreeSet<&str> = excluded_obj.keys().map(|k| k.as_str()).collect();
+        assert_eq!(
+            excluded_keys,
+            BTreeSet::from(["total", "by_rule", "samples"]),
+            "ExcludedSummary のキーは total/by_rule/samples のはず"
+        );
+
+        let rule_count_obj = excluded_obj["by_rule"][0]
+            .as_object()
+            .expect("by_rule[0] must be an object");
+        let rule_count_keys: BTreeSet<&str> = rule_count_obj.keys().map(|k| k.as_str()).collect();
+        assert_eq!(
+            rule_count_keys,
+            BTreeSet::from(["rule", "count"]),
+            "ExcludedRuleCount のキーは rule/count のはず"
+        );
+    }
+
+    /// `process_media_with_list` / `process_media_with_list_progress` は事前スキャン済みの
+    /// リストを受け取って処理するだけで自身は scan しないため、`exclude_system_artifacts` の
+    /// 値に関わらず `ProcessResult::excluded_files` は常に 0（#28）。この契約を固定する。
+    #[test]
+    fn process_media_with_list_excluded_files_is_always_zero() {
+        let tmp = std::env::temp_dir().join(format!(
+            "photo_returns_excluded_zero_test_{}",
+            std::process::id()
+        ));
+        let out_dir = tmp.join("out");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&out_dir).unwrap();
+
+        // exclude_system_artifacts=true でも scan を伴わない経路では 0 のまま。
+        let mut media = vec![tz_item(local_dt(2024, 1, 1, 12, 0, 0), None, None, None)];
+        let options_on = ProcessOptions {
+            parallel: false,
+            exclude_system_artifacts: true,
+            ..Default::default()
+        };
+        let result = process_media_with_list(&mut media, &out_dir, &options_on).unwrap();
+        assert_eq!(
+            result.excluded_files, 0,
+            "exclude_system_artifacts=true でも0のはず"
+        );
+
+        // exclude_system_artifacts=false でも同様（進捗版でも同じ契約）。
+        let mut media2 = vec![tz_item(local_dt(2024, 1, 1, 12, 0, 0), None, None, None)];
+        let options_off = ProcessOptions {
+            parallel: false,
+            exclude_system_artifacts: false,
+            ..Default::default()
+        };
+        let result2 =
+            process_media_with_list_progress(&mut media2, &out_dir, &options_off, |_| {}).unwrap();
+        assert_eq!(
+            result2.excluded_files, 0,
+            "exclude_system_artifacts=false でも0のはず"
+        );
+
+        let _ = fs::remove_dir_all(&tmp);
     }
 
     fn local_dt(y: i32, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> DateTime<Local> {

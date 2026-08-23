@@ -1,5 +1,5 @@
 // モックデータ - ブラウザでの開発用
-import type { MediaInfo } from './types';
+import type { MediaInfo, ExcludedSummary } from './types';
 
 export const MOCK_ENABLED = false;
 
@@ -331,4 +331,16 @@ export const mockProcessResult = {
   processed_files: 7,
   media: mockMediaList,
   errors: ['Failed to process IMG_9999.jpg: No EXIF date found'],
+  excluded_files: 3,
+};
+
+// scan_media で除外されたシステム生成物のサマリ（#28）のモック。
+export const mockExcludedSummary: ExcludedSummary = {
+  total: 3,
+  by_rule: [
+    { rule: 'trashed', count: 1 },
+    { rule: 'thumbnails', count: 1 },
+    { rule: 'apple_double', count: 1 },
+  ],
+  samples: ['DCIM/.trashed-1699999999.jpg', 'DCIM/.thumbnails/IMG_0001.jpg', 'DCIM/._IMG_1234.JPG'],
 };

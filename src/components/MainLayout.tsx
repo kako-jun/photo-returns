@@ -1,15 +1,18 @@
+import { useState } from 'react';
 import { Table, flexRender, type ColumnDef } from '@tanstack/react-table';
 import { HiOutlineMagnifyingGlass, HiOutlineCog, HiOutlineArrowPath } from 'react-icons/hi2';
-import type { MediaInfo, ProcessResult } from '../types';
+import type { MediaInfo, ProcessResult, ExcludedSummary } from '../types';
 import { Header } from './Header';
 import { Footer } from './Footer';
 import { ScrollToTopButton } from './ScrollToTopButton';
 import { ProcessSummary } from './ProcessSummary';
 import { ProcessingFlow } from './ProcessingFlow';
 import { LightBox } from './LightBox';
+import { LogViewer } from './LogViewer';
 import { DirectorySelection } from './DirectorySelection';
 import { DefaultSettings } from './DefaultSettings';
 import { progressPercent } from '../lib/processResults';
+import { excludedSummaryToLogEntries, excludedSummaryFooterText } from '../lib/excludedSummary';
 
 interface MainLayoutProps {
   isDark: boolean;
@@ -30,6 +33,9 @@ interface MainLayoutProps {
   onVideoDateSourceChange: (value: 'Exif' | 'FileName' | 'FileCreated' | 'FileModified') => void;
   onVideoTimezoneOffsetChange: (value: string) => void;
   onVideoRotationModeChange: (value: 'none' | 'exif' | '90' | '180' | '270') => void;
+  /** システム生成物を scan_media で除外するかどうか（#28）。既定 true。 */
+  excludeSystemArtifacts: boolean;
+  onExcludeSystemArtifactsChange: (value: boolean) => void;
   onScanMedia: () => void;
   isScanning: boolean;
   onProcessMedia: () => void;
@@ -39,6 +45,8 @@ interface MainLayoutProps {
   progressTotal: number;
   mediaList: MediaInfo[];
   processResult: ProcessResult | null;
+  /** 直近の scan_media で除外されたシステム生成物のサマリ（#28）。scan前は null。 */
+  excludedSummary: ExcludedSummary | null;
   table: Table<MediaInfo>;
   columns: ColumnDef<MediaInfo>[];
   lightboxIndex: number | null;
@@ -71,6 +79,8 @@ export function MainLayout({
   onVideoDateSourceChange,
   onVideoTimezoneOffsetChange,
   onVideoRotationModeChange,
+  excludeSystemArtifacts,
+  onExcludeSystemArtifactsChange,
   onScanMedia,
   isScanning,
   onProcessMedia,
@@ -80,6 +90,7 @@ export function MainLayout({
   progressTotal,
   mediaList,
   processResult,
+  excludedSummary,
   table,
   columns,
   lightboxIndex,
@@ -90,6 +101,10 @@ export function MainLayout({
   orientationCandidateCount,
   onStartOrientationConfirm,
 }: MainLayoutProps) {
+  // 除外内訳ポップアップ（#28）。EXCLUDED 表示を押すと開く。
+  const [showExcludedDetail, setShowExcludedDetail] = useState(false);
+  const hasExcluded = (excludedSummary?.total ?? 0) > 0;
+
   return (
     <div
       className="flex min-h-screen flex-col"
@@ -141,6 +156,8 @@ export function MainLayout({
               onVideoDateSourceChange={onVideoDateSourceChange}
               onVideoTimezoneOffsetChange={onVideoTimezoneOffsetChange}
               onVideoRotationModeChange={onVideoRotationModeChange}
+              excludeSystemArtifacts={excludeSystemArtifacts}
+              onExcludeSystemArtifactsChange={onExcludeSystemArtifactsChange}
             />
 
             {/* Action buttons — transport section */}
@@ -258,6 +275,30 @@ export function MainLayout({
             >
               [{String(mediaList.length).padStart(4, '0')}]
             </span>
+            {/* 除外件数（#28）。除外が1件以上のときだけ表示、押すとルール別内訳を見られる。 */}
+            {hasExcluded && (
+              <button
+                onClick={() => setShowExcludedDetail(true)}
+                className="flex items-center gap-1.5 rounded-sm px-2 py-0.5"
+                style={{
+                  background: 'transparent',
+                  border: '1px solid rgba(255,170,0,0.25)',
+                  cursor: 'pointer',
+                }}
+                title="除外されたシステム生成物の内訳を見る"
+              >
+                <span
+                  className="inline-block h-1.5 w-1.5 rounded-full"
+                  style={{ background: '#ffaa00', boxShadow: '0 0 4px rgba(255,170,0,0.8)' }}
+                />
+                <span
+                  className="led-display text-xs"
+                  style={{ color: '#ffaa00', letterSpacing: '0.08em' }}
+                >
+                  EXCLUDED: {String(excludedSummary?.total ?? 0).padStart(4, '0')}
+                </span>
+              </button>
+            )}
             <div className="flex-1" />
             {/* Status indicator dots */}
             {mediaList.length > 0 && (
@@ -373,6 +414,15 @@ export function MainLayout({
       )}
 
       <ScrollToTopButton show={showScrollToTop} onClick={onScrollToTop} />
+
+      {showExcludedDetail && excludedSummary && (
+        <LogViewer
+          logs={excludedSummaryToLogEntries(excludedSummary)}
+          fileName="EXCLUDED SYSTEM ARTIFACTS"
+          onClose={() => setShowExcludedDetail(false)}
+          footerText={excludedSummaryFooterText(excludedSummary)}
+        />
+      )}
     </div>
   );
 }

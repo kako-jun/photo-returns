@@ -154,6 +154,7 @@ output/
 - `include_videos: true` - 動画ファイルも処理
 - `cleanup_temp: true` - 一時ファイル削除
 - `auto_correct_orientation: true` - 画像回転修正
+- `exclude_system_artifacts: true` - システム生成物を除外（Android 削除済み `.trashed-*`、`.thumbnails` 配下、`.nomedia`、AppleDouble `._*`、OS メタデータ `.DS_Store`/`Thumbs.db`）。既定 ON なのは、削除したはずの写真が誤って取り込まれ永久アーカイブに復活する事故を防ぐため
 
 ## 関連ツール
 
