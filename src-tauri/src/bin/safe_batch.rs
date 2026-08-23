@@ -97,6 +97,7 @@ fn main() {
         timezone_offset: None,
         cleanup_temp: true,
         auto_correct_orientation: false,
+        exclude_system_artifacts: true,
     };
 
     let skipped_file = File::create(&skipped_path).unwrap_or_else(|err| {
@@ -117,7 +118,7 @@ fn main() {
     for input_dir in &input_dirs {
         eprintln!("Scanning {}", input_dir.display());
         let media = match photo_core::scan_media(input_dir, &options) {
-            Ok(media) => media,
+            Ok(outcome) => outcome.media,
             Err(err) => {
                 eprintln!("scan failed for {}: {err}", input_dir.display());
                 continue;
