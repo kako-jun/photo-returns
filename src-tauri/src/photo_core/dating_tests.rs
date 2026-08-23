@@ -254,7 +254,7 @@ fn build_stem_no_date_ignores_burst_index() {
     // 低レベルな純粋フォーマッタとして意図的にこの形にしてある——「契約」に格上げ
     // （＝date=None のとき burst_index を拒否/無視する）はしない。
     //
-    // date=None かつ burst_index=Some の組み合わせは、現在の呼び出し側3箇所では
+    // date=None かつ burst_index=Some の組み合わせは、現在の呼び出し側4箇所では
     // 構造的に到達不能:
     //   - `scan_media` 初期構築（mod.rs）: date=None の分岐では burst_index を渡していない
     //   - `scan_media` バースト反映ループ（mod.rs）: `if let Some(date) = ...` の中でしか
