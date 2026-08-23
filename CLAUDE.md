@@ -43,7 +43,7 @@ cd src-tauri && cargo test  # Rust tests
 
 ## Key Conventions
 
-- Pre-commit hooks: Husky + lint-staged (ESLint + Prettier for TS, rustfmt + clippy for Rust)
+- Pre-commit hooks: Husky + lint-staged (ESLint + Prettier for TS, rustfmt for Rust)。clippy はビルドを伴い遅いため pre-commit では実行せず CI に任せる
 - `chrono` requires `serde` feature for DateTime serialization
 - `kamadak-exif` is imported as `exif`
 - `img-parts` requires `use` for `ImageEXIF` trait
@@ -54,7 +54,7 @@ cd src-tauri && cargo test  # Rust tests
 
 - **CI**: `.github/workflows/ci.yml` — push/PR to main triggers `npm run build` / `npm test` (vitest) / `cargo fmt --check` / `cargo clippy -- -D warnings` / `cargo check` / `cargo test`
 - **Release**: `.github/workflows/release.yml` — manual dispatch or tag `v*`, 3-OS matrix (macOS/Linux/Windows), tauri-action, draft release
-- **Pre-commit**: Husky + lint-staged (`eslint --fix` + `prettier` for TS/JS, `prettier` for JSON/CSS/MD) + `cargo fmt`
+- **Pre-commit**: Husky + lint-staged（`eslint --fix` + `prettier` for TS/JS、`prettier` for JSON/CSS/MD、`rustfmt --edition 2021` for Rust）。整形結果は lint-staged が自動で再ステージする。clippy は実行しない
 
 ## Design Decisions
 

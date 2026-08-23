@@ -28,6 +28,9 @@
     ],
     "*.{json,css,md}": [
       "prettier --write"
+    ],
+    "src-tauri/**/*.rs": [
+      "rustfmt --edition 2021"
     ]
   },
   "dependencies": {
