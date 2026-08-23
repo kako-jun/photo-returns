@@ -1194,12 +1194,15 @@ mod tests {
         Local.with_ymd_and_hms(y, mo, d, h, mi, s).single().unwrap()
     }
 
-    /// タイムゾーン補正テスト用に最小の MediaInfo を組み立てる。
-    fn tz_item(
+    /// 最小の MediaInfo を組み立てる汎用ヘルパー（#29）。`burst_index`/`tag` を明示指定できる。
+    /// `tz_item` はこれの薄いラッパー（burst_index/tag は常に None）として残す。
+    fn media_item(
         date: DateTime<Local>,
         subsec: Option<u32>,
         tz_override: Option<&str>,
         exif_tz: Option<&str>,
+        burst_index: Option<usize>,
+        tag: Option<&str>,
     ) -> MediaInfo {
         MediaInfo {
             source: MediaSource {
@@ -1222,12 +1225,15 @@ mod tests {
                 date_source: DateSource::Exif,
             },
             derived: DerivedOutput {
-                new_name: format!("{}.jpg", build_stem(Some(&date), subsec, None, "", None)),
+                new_name: format!(
+                    "{}.jpg",
+                    build_stem(Some(&date), subsec, burst_index, "", tag)
+                ),
                 new_path: PathBuf::new(),
                 rotation_applied: false,
-                burst_group_id: None,
-                burst_index: None,
-                resolved_provenance_tag: None,
+                burst_group_id: burst_index.map(|_| 0),
+                burst_index,
+                resolved_provenance_tag: tag.map(|s| s.to_string()),
             },
             overrides: UserOverrides {
                 timezone_offset: tz_override.map(|s| s.to_string()),
@@ -1235,6 +1241,88 @@ mod tests {
             },
             logs: Vec::new(),
         }
+    }
+
+    /// タイムゾーン補正テスト用に最小の MediaInfo を組み立てる（burst_index/tag なし）。
+    fn tz_item(
+        date: DateTime<Local>,
+        subsec: Option<u32>,
+        tz_override: Option<&str>,
+        exif_tz: Option<&str>,
+    ) -> MediaInfo {
+        media_item(date, subsec, tz_override, exif_tz, None, None)
+    }
+
+    // ---- #29 回帰(a): apply_timezone_correction がバースト連番・由来タグを落とさないこと ----
+    //
+    // 背景: apply_timezone_correction は以前、build_stem に一本化される前の旧 format_filename を
+    // 直呼びしていたため、TZ補正がかかると burst_index・resolved_provenance_tag が new_name に
+    // 反映されず黙って消えていた。既存の tz_correction_* テストは全て tz_item（burst_index=None,
+    // resolved_provenance_tag=None 固定）経由のため、この経路を一度も踏んでいなかった。
+
+    #[test]
+    fn tz_correction_preserves_burst_index_regression() {
+        // (a) burst_index を持つ item が TZ補正後も new_name にバースト連番を残すこと。
+        let mut item = media_item(
+            local_dt(2024, 1, 1, 15, 0, 0),
+            None,
+            Some("+00:00"),
+            None,
+            Some(2),
+            None,
+        );
+        apply_timezone_correction(&mut item);
+        assert_eq!(
+            item.dates.date_taken.unwrap(),
+            local_dt(2024, 1, 2, 0, 0, 0)
+        );
+        assert_eq!(
+            item.derived.burst_index,
+            Some(2),
+            "burst_index フィールド自体は TZ補正で変化しないはず"
+        );
+        assert_eq!(
+            item.derived.new_name, "2024-01-02_00-00-00_02.jpg",
+            "TZ補正後の new_name にバースト連番 _02 が残っているはず"
+        );
+    }
+
+    #[test]
+    fn tz_correction_preserves_provenance_tag_regression() {
+        // (a) resolved_provenance_tag を持つ item が TZ補正後も new_name にタグを残すこと。
+        let mut item = media_item(
+            local_dt(2024, 1, 1, 15, 0, 0),
+            None,
+            Some("+00:00"),
+            None,
+            None,
+            Some("takeout"),
+        );
+        apply_timezone_correction(&mut item);
+        assert_eq!(
+            item.derived.resolved_provenance_tag.as_deref(),
+            Some("takeout"),
+            "resolved_provenance_tag フィールド自体は TZ補正で変化しないはず"
+        );
+        assert_eq!(
+            item.derived.new_name, "2024-01-02_00-00-00_takeout.jpg",
+            "TZ補正後の new_name にタグ _takeout が残っているはず"
+        );
+    }
+
+    #[test]
+    fn tz_correction_preserves_burst_index_and_tag_together_regression() {
+        // (a) burst かつ tag 両方ありでも、TZ補正後に「日時_バーストNN_タグ」の形を保つこと。
+        let mut item = media_item(
+            local_dt(2024, 1, 1, 15, 0, 0),
+            None,
+            Some("+00:00"),
+            None,
+            Some(2),
+            Some("takeout"),
+        );
+        apply_timezone_correction(&mut item);
+        assert_eq!(item.derived.new_name, "2024-01-02_00-00-00_02_takeout.jpg");
     }
 
     #[test]
@@ -1493,6 +1581,326 @@ mod tests {
         assert_eq!(evs[0].status, ProgressStatus::Error);
         assert_eq!(evs[0].done, 1);
         assert_eq!(evs[0].total, 1);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    // ---- #29 回帰(b): process_media_inner の衝突ループがバースト連番・由来タグを
+    // 無視して日付だけから名前を再構築していたバグの回帰 ----
+    //
+    // 背景: `while candidate.exists()` ループは以前、衝突時の再生成に日付のみを使っており、
+    // burst_index・resolved_provenance_tag が衝突サフィックス付与時に失われていた。
+    // 衝突ループを対象にしたテストは単体にも e2e にも1本も無かった。
+
+    /// コピー元として実在するファイルを作り、対応する MediaInfo を組み立てる
+    /// （`process_media_inner` はコピー元の存在チェックを行うため実ファイルが要る）。
+    /// `dir` はファイルごとに別ディレクトリにすること（同名ファイルが同一ディレクトリに
+    /// 共存できないため、日付なし衝突テストでは同じ `file_name` を複数用意する必要がある）。
+    fn collision_test_item(
+        dir: &Path,
+        file_name: &str,
+        date: Option<DateTime<Local>>,
+        burst_index: Option<usize>,
+        tag: Option<&str>,
+    ) -> MediaInfo {
+        fs::create_dir_all(dir).unwrap();
+        let path = dir.join(file_name);
+        fs::write(&path, b"x").unwrap();
+
+        let new_name = match date {
+            Some(d) => format!("{}.jpg", build_stem(Some(&d), None, burst_index, "", tag)),
+            None => {
+                let fallback_stem = Path::new(file_name)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(file_name);
+                format!(
+                    "{}.jpg",
+                    build_stem(None, None, burst_index, fallback_stem, tag)
+                )
+            }
+        };
+
+        MediaInfo {
+            source: MediaSource {
+                original_path: path,
+                file_name: file_name.to_string(),
+                media_type: MediaType::Photo,
+                file_size: 1,
+                exif_orientation: None,
+                width: None,
+                height: None,
+            },
+            dates: DateCandidates {
+                date_taken: date,
+                subsec_time: None,
+                timezone: None,
+                exif_date: None,
+                filename_date: None,
+                file_created_date: None,
+                file_modified_date: None,
+                date_source: if date.is_some() {
+                    DateSource::Exif
+                } else {
+                    DateSource::None
+                },
+            },
+            derived: DerivedOutput {
+                new_name,
+                new_path: PathBuf::new(),
+                rotation_applied: false,
+                burst_group_id: burst_index.map(|_| 0),
+                burst_index,
+                resolved_provenance_tag: tag.map(|s| s.to_string()),
+            },
+            overrides: UserOverrides {
+                timezone_offset: None,
+                rotation_mode: None,
+            },
+            logs: Vec::new(),
+        }
+    }
+
+    /// 処理後の出力ファイル名（`new_path` のファイル名部分）を並び順どおりに集める。
+    fn processed_file_names(media: &[MediaInfo]) -> Vec<String> {
+        media
+            .iter()
+            .map(|m| {
+                m.derived
+                    .new_path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn collision_same_tag_same_datetime_no_burst_gets_incrementing_suffixes() {
+        // 衝突ループ2周目の基本形: 同一タグ・同一日時（burst無し）3枚は
+        // 無サフィックス → _01 → _02 と増えていくはず。
+        let tmp = std::env::temp_dir().join(format!(
+            "photo_returns_collision_plain_test_{}",
+            std::process::id()
+        ));
+        let out_dir = tmp.join("out");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&out_dir).unwrap();
+
+        let date = local_dt(2024, 5, 1, 9, 0, 0);
+        let mut media = vec![
+            collision_test_item(
+                &tmp.join("src1"),
+                "a.jpg",
+                Some(date),
+                None,
+                Some("takeout"),
+            ),
+            collision_test_item(
+                &tmp.join("src2"),
+                "b.jpg",
+                Some(date),
+                None,
+                Some("takeout"),
+            ),
+            collision_test_item(
+                &tmp.join("src3"),
+                "c.jpg",
+                Some(date),
+                None,
+                Some("takeout"),
+            ),
+        ];
+
+        let options = ProcessOptions {
+            parallel: false,
+            ..Default::default()
+        };
+        let result = process_media_with_list(&mut media, &out_dir, &options).unwrap();
+        assert_eq!(result.processed_files, 3);
+
+        assert_eq!(
+            processed_file_names(&media),
+            vec![
+                "2024-05-01_09-00-00_takeout.jpg",
+                "2024-05-01_09-00-00_takeout_01.jpg",
+                "2024-05-01_09-00-00_takeout_02.jpg",
+            ]
+        );
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn collision_burst_and_tag_together_regression() {
+        // (b) の核心: burst_index・タグ両方ありの衝突は「日時_バーストNN_タグ_衝突NN」の
+        // 4要素を全部保ったまま再構築されること。
+        let tmp = std::env::temp_dir().join(format!(
+            "photo_returns_collision_burst_tag_test_{}",
+            std::process::id()
+        ));
+        let out_dir = tmp.join("out");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&out_dir).unwrap();
+
+        let date = local_dt(2024, 5, 1, 9, 0, 0);
+        let mut media = vec![
+            collision_test_item(
+                &tmp.join("src1"),
+                "a.jpg",
+                Some(date),
+                Some(1),
+                Some("line"),
+            ),
+            collision_test_item(
+                &tmp.join("src2"),
+                "b.jpg",
+                Some(date),
+                Some(1),
+                Some("line"),
+            ),
+        ];
+
+        let options = ProcessOptions {
+            parallel: false,
+            ..Default::default()
+        };
+        process_media_with_list(&mut media, &out_dir, &options).unwrap();
+
+        let names = processed_file_names(&media);
+        assert_eq!(names[0], "2024-05-01_09-00-00_01_line.jpg");
+        assert_eq!(
+            names[1], "2024-05-01_09-00-00_01_line_01.jpg",
+            "バースト連番・タグ・衝突連番の4要素が揃うはず（(b)の核心）"
+        );
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn collision_burst_without_tag_preserves_burst_index_regression() {
+        // (b): タグ無しでも burst_index が衝突連番付与のたびに失われないこと。
+        let tmp = std::env::temp_dir().join(format!(
+            "photo_returns_collision_burst_only_test_{}",
+            std::process::id()
+        ));
+        let out_dir = tmp.join("out");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&out_dir).unwrap();
+
+        let date = local_dt(2024, 5, 1, 9, 0, 0);
+        let mut media = vec![
+            collision_test_item(&tmp.join("src1"), "a.jpg", Some(date), Some(3), None),
+            collision_test_item(&tmp.join("src2"), "b.jpg", Some(date), Some(3), None),
+        ];
+
+        let options = ProcessOptions {
+            parallel: false,
+            ..Default::default()
+        };
+        process_media_with_list(&mut media, &out_dir, &options).unwrap();
+
+        let names = processed_file_names(&media);
+        assert_eq!(names[0], "2024-05-01_09-00-00_03.jpg");
+        assert_eq!(
+            names[1], "2024-05-01_09-00-00_03_01.jpg",
+            "バースト連番 _03 が衝突連番付与後も失われないはず"
+        );
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn collision_no_date_with_tag_uses_original_stem_regression() {
+        // 日付なしファイル + タグの衝突は「<元のstem>_タグ_衝突NN」になること。
+        let tmp = std::env::temp_dir().join(format!(
+            "photo_returns_collision_no_date_test_{}",
+            std::process::id()
+        ));
+        let out_dir = tmp.join("out");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&out_dir).unwrap();
+
+        let mut media = vec![
+            collision_test_item(
+                &tmp.join("src1"),
+                "IMG_1234.jpg",
+                None,
+                None,
+                Some("takeout"),
+            ),
+            collision_test_item(
+                &tmp.join("src2"),
+                "IMG_1234.jpg",
+                None,
+                None,
+                Some("takeout"),
+            ),
+        ];
+
+        let options = ProcessOptions {
+            parallel: false,
+            ..Default::default()
+        };
+        process_media_with_list(&mut media, &out_dir, &options).unwrap();
+
+        let names = processed_file_names(&media);
+        assert_eq!(names[0], "IMG_1234_takeout.jpg");
+        assert_eq!(names[1], "IMG_1234_takeout_01.jpg");
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn collision_only_happens_for_same_tag_different_tag_does_not_collide() {
+        // #17: 異なるタグの同一日時ファイルは衝突しない。同一タグの同一日時は衝突連番になる。
+        let tmp = std::env::temp_dir().join(format!(
+            "photo_returns_collision_tag_scope_test_{}",
+            std::process::id()
+        ));
+        let out_dir = tmp.join("out");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&out_dir).unwrap();
+
+        let date = local_dt(2024, 5, 1, 9, 0, 0);
+        let mut media = vec![
+            collision_test_item(
+                &tmp.join("src1"),
+                "a.jpg",
+                Some(date),
+                None,
+                Some("takeout"),
+            ),
+            collision_test_item(&tmp.join("src2"), "b.jpg", Some(date), None, Some("line")),
+            collision_test_item(
+                &tmp.join("src3"),
+                "c.jpg",
+                Some(date),
+                None,
+                Some("takeout"),
+            ),
+        ];
+
+        let options = ProcessOptions {
+            parallel: false,
+            ..Default::default()
+        };
+        process_media_with_list(&mut media, &out_dir, &options).unwrap();
+
+        let names = processed_file_names(&media);
+        assert_eq!(
+            names[0], "2024-05-01_09-00-00_takeout.jpg",
+            "1件目は無サフィックス"
+        );
+        assert_eq!(
+            names[1], "2024-05-01_09-00-00_line.jpg",
+            "タグが違えば同一日時でも衝突しない（無サフィックス）"
+        );
+        assert_eq!(
+            names[2], "2024-05-01_09-00-00_takeout_01.jpg",
+            "同一タグ・同一日時は衝突連番になる"
+        );
 
         let _ = fs::remove_dir_all(&tmp);
     }
