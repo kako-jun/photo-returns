@@ -31,7 +31,13 @@ cd src-tauri && cargo test  # Rust tests
 - `App.tsx` — Business logic only (state, handlers)
 - `src/components/MainLayout.tsx` — Presentation layer
 - `src/hooks/useMediaTableColumns.tsx` — TanStack Table column definitions
-- `src-tauri/src/photo_core.rs` — Core processing (scan, EXIF, rename, rotate, logs)
+- `src-tauri/src/photo_core/` — Core processing, split by responsibility (tests live in `mod_tests.rs` / `dating_tests.rs`)
+  - `mod.rs` — Public types (MediaInfo, ProcessOptions, ...) + pipeline (scan_media, process_media, process_media_with_list)
+  - `dating.rs` — Filename/file-timestamp date extraction + `build_stem` (single source of truth for output filename stems)
+  - `exif_info.rs` — EXIF extraction + image/video extension detection
+  - `layout.rs` — Date-hierarchy directory creation, backup, unsorted dir
+  - `exclude.rs` — System-artifact exclusion (`.trashed-*`, `.thumbnails`, etc.)
+  - `provenance.rs` — Provenance-tag sanitize/resolve
 - `src-tauri/src/burst.rs` — Burst detection algorithm
 - `src-tauri/src/orientation.rs` — EXIF orientation handling + reset
 
@@ -46,7 +52,7 @@ cd src-tauri && cargo test  # Rust tests
 
 ## CI/CD
 
-- **CI**: `.github/workflows/ci.yml` — push/PR to main triggers `cargo fmt --check` / `cargo clippy` / `cargo check` + `npm run build`
+- **CI**: `.github/workflows/ci.yml` — push/PR to main triggers `npm run build` / `npm test` (vitest) / `cargo fmt --check` / `cargo clippy -- -D warnings` / `cargo check` / `cargo test`
 - **Release**: `.github/workflows/release.yml` — manual dispatch or tag `v*`, 3-OS matrix (macOS/Linux/Windows), tauri-action, draft release
 - **Pre-commit**: Husky + lint-staged (`eslint --fix` + `prettier` for TS/JS, `prettier` for JSON/CSS/MD) + `cargo fmt`
 
@@ -55,12 +61,12 @@ cd src-tauri && cargo test  # Rust tests
 - Errors don't halt processing; retry failed files individually
 - No skip/dedup: use sequential numbering (`_01`, `_02`) for conflicts
 - EXIF Orientation is reset to 1 after rotation to prevent double-rotation
-- 写真のリネームルール: EXIF撮影日時 > ファイル作成日時 > ファイル更新日時
-- フォーマット: `YYYYMMDD_HHmmss.ext`
+- 写真のリネームルール: EXIF撮影日時 > ファイル名 > ファイル作成日時 > ファイル更新日時
+- フォーマット: `YYYY-MM-DD_HH-MM-SS[-mmm][_バーストNN][_タグ].ext`（同名衝突時は末尾に `_NN` を追加。詳細は `docs/features.md`「由来タグ」参照）
 
 ## 機能概要
 
-写真を収集し、日時でリネームし、`YYYY/YYYYMM/YYYYMMDD`の階層構造に自動分類する。
+写真を収集し、日時でリネームし、`YYYY/YYYY-MM/YYYY-MM-DD`の階層構造に自動分類する。
 ユーザーが写真を集めるHDDなどにコピーしてマージし蓄積していく。
 
 ### 元プロジェクト
