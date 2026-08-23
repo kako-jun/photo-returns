@@ -123,15 +123,48 @@ export function LightBox({
           </div>
         ) : (
           <>
-            <img
-              src={convertFileSrc(currentMedia.original_path)}
-              alt={currentMedia.file_name}
-              className="max-h-[80vh] max-w-full object-contain"
-              style={{
-                border: '1px solid #333',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.8)',
-              }}
-            />
+            <div className="relative flex max-h-[80vh] max-w-full items-center justify-center">
+              <img
+                src={convertFileSrc(currentMedia.original_path)}
+                alt={currentMedia.file_name}
+                className="max-h-[80vh] max-w-full object-contain"
+                style={{
+                  border: '1px solid #333',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.8)',
+                }}
+                onError={(e) => {
+                  // WebKitGTK 等、webview がデコードできない形式（HEIC/HEIF/AVIF 等）は
+                  // レイアウトを崩さずプレースホルダに差し替える（#31）。
+                  e.currentTarget.style.display = 'none';
+                  const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
+                  if (fallback) fallback.style.display = 'flex';
+                }}
+              />
+              <div
+                className="flex-col items-center justify-center gap-2 rounded-sm p-8"
+                style={{
+                  display: 'none',
+                  background: 'linear-gradient(180deg, #1e1e1e, #181818)',
+                  border: '1px solid #333',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.8)',
+                }}
+              >
+                <HiPhoto className="h-24 w-24" style={{ color: '#333' }} />
+                <p
+                  className="led-display text-base font-semibold"
+                  style={{ color: '#c0c0c0', letterSpacing: '0.06em' }}
+                >
+                  {currentMedia.file_name}
+                </p>
+                <p
+                  className="led-display text-xs"
+                  style={{ color: '#aa6600', textShadow: '0 0 6px rgba(180,120,0,0.4)' }}
+                >
+                  ◆ PREVIEW NOT AVAILABLE:{' '}
+                  {(currentMedia.file_name.split('.').pop() || 'UNKNOWN').toUpperCase()}
+                </p>
+              </div>
+            </div>
             <div
               className="mt-3 rounded-sm px-5 py-2 text-center"
               style={{
