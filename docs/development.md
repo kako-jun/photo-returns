@@ -81,7 +81,7 @@
 - React + TypeScript フロントエンド
 - フォルダ選択ダイアログ
 - メディアスキャン機能
-- TanStack Table データグリッド（11列）：
+- TanStack Table データグリッド（14列）：
   - Expander（展開ボタン）
   - Index（行番号）
   - Before（回転前プレビュー）
