@@ -119,6 +119,11 @@ pub struct MediaSource {
     pub width: Option<u32>,
     /// 画像の高さ（ピクセル）
     pub height: Option<u32>,
+    /// ロスレス回転に対応した拡張子かどうか（`orientation::supports_lossless_rotation` と同じ判定）。
+    /// スキャン時に1回だけ計算して JSON に載せる。拡張子の対応リストは Rust 単独を正本とし、
+    /// フロントは文字列解析をせずこの値を読むだけにする（#31 セルフレビュー S2。TS/Rust の
+    /// 2言語に正本が分かれるドリフトリスクを塞ぐ）。
+    pub supports_lossless_rotation: bool,
 }
 
 /// 日付候補（複数ソースから派生。ユーザー選択用に全候補を保持）
@@ -370,6 +375,9 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
                         exif_orientation: exif_info.orientation,
                         width: video_meta.as_ref().map(|v| v.width).or(exif_info.width),
                         height: video_meta.as_ref().map(|v| v.height).or(exif_info.height),
+                        supports_lossless_rotation: orientation::supports_lossless_rotation(
+                            &extension,
+                        ),
                     },
                     dates: DateCandidates {
                         date_taken,
@@ -810,20 +818,39 @@ where
                             };
 
                             if degrees != 0 {
-                                item.add_log(
-                                    LogLevel::Info,
-                                    format!("Applying lossless rotation: {degrees}°"),
-                                );
-                                match orientation::rotate_file_in_place(&target_path, degrees) {
-                                    Ok(()) => {
-                                        item.derived.rotation_applied = true;
-                                        item.add_log(LogLevel::Info, "Image rotated losslessly");
-                                    }
-                                    Err(e) => {
-                                        item.add_log(
-                                            LogLevel::Error,
-                                            format!("Failed to rotate image: {e}"),
-                                        );
+                                let extension = target_path
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or("");
+
+                                if !orientation::supports_lossless_rotation(extension) {
+                                    // HEIC/HEIF/AVIF は image crate がデコードできないため、
+                                    // image::open に流してエラーにする前に判定してスキップする（#31）。
+                                    item.add_log(
+                                        LogLevel::Warning,
+                                        format!(
+                                            "Lossless rotation is not supported for this format ({extension}), skipping rotation"
+                                        ),
+                                    );
+                                } else {
+                                    item.add_log(
+                                        LogLevel::Info,
+                                        format!("Applying lossless rotation: {degrees}°"),
+                                    );
+                                    match orientation::rotate_file_in_place(&target_path, degrees) {
+                                        Ok(()) => {
+                                            item.derived.rotation_applied = true;
+                                            item.add_log(
+                                                LogLevel::Info,
+                                                "Image rotated losslessly",
+                                            );
+                                        }
+                                        Err(e) => {
+                                            item.add_log(
+                                                LogLevel::Error,
+                                                format!("Failed to rotate image: {e}"),
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -879,10 +906,10 @@ mod tests {
 
     /// フロントエンド契約の機械検証:
     /// MediaInfo はサブ構造体に分割したが `#[serde(flatten)]` により
-    /// JSON は flat な 23 キーのまま（`src/types.ts` の `interface MediaInfo`）。
+    /// JSON は flat な 24 キーのまま（`src/types.ts` の `interface MediaInfo`）。
     /// このテストが落ちたらフロントが壊れるサイン。
     #[test]
-    fn mediainfo_wire_format_is_flat_23_keys() {
+    fn mediainfo_wire_format_is_flat_24_keys() {
         let info = MediaInfo {
             source: MediaSource {
                 original_path: PathBuf::from("/tmp/in.jpg"),
@@ -892,6 +919,7 @@ mod tests {
                 exif_orientation: Some(1),
                 width: Some(640),
                 height: Some(480),
+                supports_lossless_rotation: true,
             },
             dates: DateCandidates {
                 date_taken: None,
@@ -946,6 +974,7 @@ mod tests {
             "rotation_mode",
             "width",
             "height",
+            "supports_lossless_rotation",
             "logs",
         ]
         .into_iter()
@@ -953,12 +982,12 @@ mod tests {
 
         assert_eq!(
             actual, expected,
-            "MediaInfo の top-level JSON キーがフロント契約（23キー flat）と一致しません"
+            "MediaInfo の top-level JSON キーがフロント契約（24キー flat）と一致しません"
         );
         assert_eq!(
             actual.len(),
-            23,
-            "MediaInfo の top-level キーは 23 個のはず"
+            24,
+            "MediaInfo の top-level キーは 24 個のはず"
         );
     }
 
@@ -1111,6 +1140,7 @@ mod tests {
                 exif_orientation: None,
                 width: None,
                 height: None,
+                supports_lossless_rotation: true,
             },
             dates: DateCandidates {
                 date_taken: Some(date),

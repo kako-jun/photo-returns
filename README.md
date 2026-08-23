@@ -10,14 +10,14 @@ PhotoReturns は、EXIFメタデータに基づいて写真や動画を整理・
 - **EXIF ベースのリネーム** - 撮影日時メタデータを使って自動的にファイルをリネーム
 - **ディレクトリ階層** - `YYYY/YYYY-MM/YYYY-MM-DD` 構造でファイルを整理
 - **マルチフォーマット対応**
-  - 画像8形式: JPG, PNG, GIF, BMP, WebP, TIFF
+  - 画像11形式: JPG, PNG, GIF, BMP, WebP, TIFF, HEIC, HEIF, AVIF
   - 動画4形式: MP4, MOV, M4V, WebM
 - **複数の日付ソース** - EXIF、ファイル名、作成日時、更新日時から選択可能
 - **タイムゾーン調整** - 写真と動画で個別にタイムゾーンを設定可能
 
 ### 自動機能
 - **バースト検出** - 連続撮影写真（3秒以内に3枚以上）を識別して連番を付与
-- **EXIF 回転補正（ロスレス）** - EXIF の Orientation(1/3/6/8) に基づき画像を回転。JPEG は turbojpeg(libjpeg-turbo) の DCT 領域変換で**無劣化**回転し、date/GPS 等の EXIF を保持したまま Orientation を 1 にリセット。ミラー系(2/4/5/7) は非対応のためスキップ＋ログ記録
+- **EXIF 回転補正（ロスレス）** - EXIF の Orientation(1/3/6/8) に基づき画像を回転。JPEG は turbojpeg(libjpeg-turbo) の DCT 領域変換で**無劣化**回転し、date/GPS 等の EXIF を保持したまま Orientation を 1 にリセット。ミラー系(2/4/5/7) と HEIC/HEIF/AVIF（`image` crate がデコード非対応）は非対応のためスキップ＋ログ記録
 - **回転プレビュー** - Before/After カラムで回転前後の画像を確認
 - **方向確認ポップアップ** - スキャン後「向きを確認 (N)」ボタンで、回転候補（写真・Orientation≠1・非ミラー）を1枚ずつ確認。矢印キー(↑→↓←)/クリックで「こっちが上」を指定→即確定して次へ。Space=スキップ、Esc=終了。確定した絶対角で既存のロスレス回転が適用される
 - **リアルタイム進捗** - 処理中、ファイル1件完了ごとに進捗バーと各行の状態が更新される（Tauri Channel）

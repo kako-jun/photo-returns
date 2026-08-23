@@ -12,6 +12,12 @@ import {
   HiOutlineSquare3Stack3D,
 } from 'react-icons/hi2';
 import type { MediaInfo } from '../types';
+import {
+  supportsLosslessRotation,
+  effectiveRotationMode,
+  rotationDisplayDegrees,
+} from '../lib/orientationQueue';
+import { ImageWithFallback } from '../components/ImageWithFallback';
 
 const columnHelper = createColumnHelper<MediaInfo>();
 
@@ -113,6 +119,7 @@ export function useMediaTableColumns({
 
           if (mediaType === 'Photo') {
             const assetUrl = convertFileSrc(originalPath);
+            const extLabel = (originalPath.split('.').pop() || '').toUpperCase();
             return (
               <button
                 onClick={() => setLightboxIndex(rowIndex)}
@@ -120,12 +127,23 @@ export function useMediaTableColumns({
                 style={{ display: 'block' }}
                 title="Click to view full size"
               >
-                <img
+                <ImageWithFallback
                   src={assetUrl}
                   alt="thumbnail"
                   className="h-14 w-14 cursor-pointer object-cover transition-opacity hover:opacity-75"
                   style={{ display: 'block' }}
                   loading="lazy"
+                  fallback={
+                    <div
+                      className="flex h-14 w-14 flex-col items-center justify-center gap-0.5"
+                      title={`Preview not available: ${extLabel}`}
+                    >
+                      <HiPhoto className="h-6 w-6" style={{ color: '#444' }} />
+                      <span className="led-display" style={{ fontSize: '0.5rem', color: '#555' }}>
+                        {extLabel || 'N/A'}
+                      </span>
+                    </div>
+                  }
                 />
               </button>
             );
@@ -493,9 +511,9 @@ export function useMediaTableColumns({
         cell: (info) => {
           const media = info.row.original;
           const { exif_orientation } = media;
-          const rotationMode =
-            media.rotation_mode ?? (exif_orientation && exif_orientation !== 1 ? 'exif' : 'none');
-          const exifDegrees = getOrientationDegrees(exif_orientation);
+          const rotationSupported = supportsLosslessRotation(media);
+          const rotationMode = effectiveRotationMode(media);
+          const exifDegreesLabel = getOrientationDegrees(exif_orientation);
 
           const handleRotationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
             setMediaList((prevList) =>
@@ -509,24 +527,42 @@ export function useMediaTableColumns({
 
           return (
             <div className="flex flex-col gap-1">
-              {exifDegrees && (
+              {!rotationSupported ? (
                 <span
                   className="led-display"
-                  style={{ color: '#555', fontSize: '0.62rem' }}
-                  title="EXIF Orientation"
+                  style={{ color: '#555', fontSize: '0.6rem' }}
+                  title="この形式（HEIC/HEIF/AVIF）はロスレス回転に非対応のため回転できません"
                 >
-                  EXIF: {exifDegrees}
+                  NO ROTATE (FMT)
                 </span>
+              ) : (
+                exifDegreesLabel && (
+                  <span
+                    className="led-display"
+                    style={{ color: '#555', fontSize: '0.62rem' }}
+                    title="EXIF Orientation"
+                  >
+                    EXIF: {exifDegreesLabel}
+                  </span>
+                )
               )}
               <div className="relative" style={{ width: '7rem' }}>
                 <select
                   value={rotationMode}
                   onChange={handleRotationChange}
+                  disabled={!rotationSupported}
+                  title={
+                    rotationSupported
+                      ? undefined
+                      : 'この形式（HEIC/HEIF/AVIF）はロスレス回転に非対応のため回転できません'
+                  }
                   className="selector-hardware w-full rounded px-1.5 py-0.5 pr-5"
                   style={{ fontSize: '0.65rem' }}
                 >
                   <option value="none">NONE</option>
-                  <option value="exif">EXIF{exifDegrees ? ` (${exifDegrees})` : ''}</option>
+                  <option value="exif">
+                    EXIF{exifDegreesLabel ? ` (${exifDegreesLabel})` : ''}
+                  </option>
                   <option value="90">90°</option>
                   <option value="180">180°</option>
                   <option value="270">270°</option>
@@ -549,33 +585,11 @@ export function useMediaTableColumns({
           const media = info.row.original;
           const mediaType = media.media_type;
           const originalPath = media.original_path;
-          const { exif_orientation } = media;
-          const rotationMode =
-            media.rotation_mode ?? (exif_orientation && exif_orientation !== 1 ? 'exif' : 'none');
 
-          const getRotationDegrees = (): number => {
-            if (rotationMode === 'none') return 0;
-            if (rotationMode === 'exif' && exif_orientation) {
-              switch (exif_orientation) {
-                case 1:
-                  return 0;
-                case 3:
-                  return 180;
-                case 6:
-                  return 90;
-                case 8:
-                  return 270;
-                default:
-                  return 0;
-              }
-            }
-            if (rotationMode === '90') return 90;
-            if (rotationMode === '180') return 180;
-            if (rotationMode === '270') return 270;
-            return 0;
-          };
-
-          const degrees = getRotationDegrees();
+          // rotation_mode・EXIF Orientation・拡張子（ロスレス回転対応可否）から実角度を
+          // 決める唯一のソース。HEIC/HEIF/AVIF は常に 0 を返す（backend が回転を skip
+          // するため、プレビューも回さない実態と一致させる、#31）。
+          const degrees = rotationDisplayDegrees(media);
 
           if (degrees === 0) {
             return (
@@ -616,9 +630,10 @@ export function useMediaTableColumns({
 
           if (mediaType === 'Photo') {
             const assetUrl = convertFileSrc(originalPath);
+            const extLabel = (originalPath.split('.').pop() || '').toUpperCase();
             return (
               <div className="thumb-slot flex h-14 w-14 items-center justify-center overflow-hidden rounded-sm">
-                <img
+                <ImageWithFallback
                   src={assetUrl}
                   alt="rotated preview"
                   style={{
@@ -633,6 +648,17 @@ export function useMediaTableColumns({
                     display: 'block',
                   }}
                   loading="lazy"
+                  fallback={
+                    <div
+                      className="flex h-14 w-14 flex-col items-center justify-center gap-0.5"
+                      title={`Preview not available: ${extLabel}`}
+                    >
+                      <HiPhoto className="h-6 w-6" style={{ color: '#444' }} />
+                      <span className="led-display" style={{ fontSize: '0.5rem', color: '#555' }}>
+                        {extLabel || 'N/A'}
+                      </span>
+                    </div>
+                  }
                 />
               </div>
             );

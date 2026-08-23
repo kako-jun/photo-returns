@@ -2,15 +2,24 @@ import { describe, it, expect } from 'vitest';
 import type { MediaInfo } from '../types';
 import {
   isMirrorOrientation,
+  supportsLosslessRotation,
   exifDegrees,
+  effectiveRotationMode,
+  rotationDisplayDegrees,
   selectOrientationQueue,
   directionDelta,
   resolveRotationMode,
   type OrientationDirection,
 } from './orientationQueue';
 
-/** テスト用に MediaInfo を最小フィールドで組み立てる。 */
+/**
+ * テスト用に MediaInfo を最小フィールドで組み立てる。
+ * `supports_lossless_rotation` の既定値は path の拡張子（heic/heif/avif なら false）から
+ * 推定する。バックエンドがスキャン時に計算する値のテスト用スタンドインであり、
+ * orientationQueue.ts 自身はもう拡張子解析をしない（#31 セルフレビュー S2）。
+ */
 function media(path: string, over: Partial<MediaInfo> = {}): MediaInfo {
+  const extension = path.split('.').pop()?.toLowerCase() ?? '';
   return {
     original_path: path,
     file_name: path.split(/[\\/]/).pop() ?? path,
@@ -32,6 +41,7 @@ function media(path: string, over: Partial<MediaInfo> = {}): MediaInfo {
     rotation_applied: false,
     width: null,
     height: null,
+    supports_lossless_rotation: !['heic', 'heif', 'avif'].includes(extension),
     logs: [],
     ...over,
   };
@@ -42,6 +52,19 @@ describe('isMirrorOrientation', () => {
     expect([2, 4, 5, 7].map(isMirrorOrientation)).toEqual([true, true, true, true]);
     expect([1, 3, 6, 8].map(isMirrorOrientation)).toEqual([false, false, false, false]);
     expect(isMirrorOrientation(null)).toBe(false);
+  });
+});
+
+describe('supportsLosslessRotation', () => {
+  // 拡張子リストの正本は Rust（`orientation::supports_lossless_rotation`）単独（#31 S2）。
+  // ここでは「バックエンドが載せた値をそのまま読むだけ」であることだけを確認する。
+  it('media.supports_lossless_rotation の値をそのまま返す', () => {
+    expect(supportsLosslessRotation(media('/a.heic', { supports_lossless_rotation: false }))).toBe(
+      false
+    );
+    expect(supportsLosslessRotation(media('/a.jpg', { supports_lossless_rotation: true }))).toBe(
+      true
+    );
   });
 });
 
@@ -60,8 +83,59 @@ describe('exifDegrees', () => {
   });
 });
 
+describe('effectiveRotationMode', () => {
+  it('非対応形式（HEIC/HEIF/AVIF）は明示選択があっても常に none（#31）', () => {
+    expect(effectiveRotationMode(media('/a.heic', { exif_orientation: 6 }))).toBe('none');
+    expect(
+      effectiveRotationMode(media('/a.HEIF', { exif_orientation: 3, rotation_mode: '180' }))
+    ).toBe('none');
+    expect(
+      effectiveRotationMode(media('/a.avif', { rotation_mode: 'exif', exif_orientation: 8 }))
+    ).toBe('none');
+  });
+
+  it('対応形式で明示選択があればそれを優先する', () => {
+    expect(
+      effectiveRotationMode(media('/a.jpg', { rotation_mode: '90', exif_orientation: 6 }))
+    ).toBe('90');
+    expect(
+      effectiveRotationMode(media('/a.jpg', { rotation_mode: 'none', exif_orientation: 6 }))
+    ).toBe('none');
+  });
+
+  it('対応形式で明示選択がなければ EXIF Orientation≠1 の時だけ exif を既定にする', () => {
+    expect(effectiveRotationMode(media('/a.jpg', { exif_orientation: 6 }))).toBe('exif');
+    expect(effectiveRotationMode(media('/a.jpg', { exif_orientation: 1 }))).toBe('none');
+    expect(effectiveRotationMode(media('/a.jpg', { exif_orientation: null }))).toBe('none');
+  });
+});
+
+describe('rotationDisplayDegrees', () => {
+  it('非対応形式は rotation_mode を明示していても常に 0（回して見せない、#31）', () => {
+    expect(rotationDisplayDegrees(media('/a.heic', { exif_orientation: 6 }))).toBe(0);
+    expect(
+      rotationDisplayDegrees(media('/a.heic', { exif_orientation: 6, rotation_mode: '90' }))
+    ).toBe(0);
+  });
+
+  it('exif モードは EXIF Orientation から角度を導く', () => {
+    expect(rotationDisplayDegrees(media('/a.jpg', { exif_orientation: 6 }))).toBe(90);
+    expect(rotationDisplayDegrees(media('/a.jpg', { exif_orientation: 3 }))).toBe(180);
+    expect(rotationDisplayDegrees(media('/a.jpg', { exif_orientation: 8 }))).toBe(270);
+  });
+
+  it('絶対角の明示選択はそのまま角度になる、none は 0', () => {
+    expect(rotationDisplayDegrees(media('/a.jpg', { rotation_mode: '90' }))).toBe(90);
+    expect(rotationDisplayDegrees(media('/a.jpg', { rotation_mode: '180' }))).toBe(180);
+    expect(rotationDisplayDegrees(media('/a.jpg', { rotation_mode: '270' }))).toBe(270);
+    expect(
+      rotationDisplayDegrees(media('/a.jpg', { rotation_mode: 'none', exif_orientation: 6 }))
+    ).toBe(0);
+  });
+});
+
 describe('selectOrientationQueue', () => {
-  it('写真 かつ Orientation≠1 かつ 非ミラー だけを残す', () => {
+  it('写真 かつ Orientation≠1 かつ 非ミラー かつ ロスレス回転対応形式 だけを残す', () => {
     const list = [
       media('/a.jpg', { exif_orientation: 6 }), // ○ 写真・回転あり
       media('/b.jpg', { exif_orientation: 1 }), // × 直立（手動 dropdown に任せる）
@@ -71,6 +145,9 @@ describe('selectOrientationQueue', () => {
       media('/f.mp4', { media_type: 'Video', exif_orientation: 6 }), // × 動画は対象外
       media('/g.jpg', { exif_orientation: 3 }), // ○
       media('/h.jpg', { exif_orientation: 8 }), // ○
+      media('/i.heic', { exif_orientation: 6 }), // × HEIC は回転 skip 対象（#31）
+      media('/j.HEIF', { exif_orientation: 3 }), // × HEIF（大文字）も同様
+      media('/k.avif', { exif_orientation: 8 }), // × AVIF も同様
     ];
 
     expect(selectOrientationQueue(list).map((m) => m.original_path)).toEqual([

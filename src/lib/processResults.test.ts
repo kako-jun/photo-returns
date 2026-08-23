@@ -38,6 +38,7 @@ function media(path: string, over: Partial<MediaInfo> = {}): MediaInfo {
     rotation_applied: false,
     width: null,
     height: null,
+    supports_lossless_rotation: true,
     logs: [],
     ...over,
   };
