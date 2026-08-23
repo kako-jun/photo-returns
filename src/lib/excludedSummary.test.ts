@@ -29,12 +29,6 @@ describe('excludedSummaryToLogEntries', () => {
       samples: ['DCIM/.trashed-1.jpg', 'DCIM/.trashed-2.jpg', 'DCIM/.nomedia'],
     };
     const entries = excludedSummaryToLogEntries(summary);
-    expect(entries.map((e) => e.timestamp)).toEqual([
-      'RULE',
-      'RULE',
-      'SAMPLE',
-      'SAMPLE',
-      'SAMPLE',
-    ]);
+    expect(entries.map((e) => e.timestamp)).toEqual(['RULE', 'RULE', 'SAMPLE', 'SAMPLE', 'SAMPLE']);
   });
 });
