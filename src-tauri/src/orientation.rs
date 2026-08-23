@@ -235,6 +235,17 @@ pub fn reset_exif_orientation(image_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// 拡張子がロスレス回転に対応しているかを判定する。
+///
+/// HEIC/HEIF/AVIF は EXIF 抽出（kamadak-exif の ISO BMFF パーサ）には対応しているが、
+/// `image` crate 0.24 がデコードできないため `rotate_file_in_place` に流すと失敗する（#31）。
+/// ミラー系 Orientation（2/4/5/7）と同様、呼び出し側でこの判定を先に行い、
+/// `image::open` を呼んでエラーにする代わりに警告ログを残してスキップする。
+/// 大文字小文字は問わない（内部で小文字化して比較する）。
+pub fn supports_lossless_rotation(extension: &str) -> bool {
+    !matches!(extension.to_lowercase().as_str(), "heic" | "heif" | "avif")
+}
+
 /// EXIF Orientation 値がミラー系（2/4/5/7）かを判定する。
 ///
 /// 現実のカメラ・スマホは回転（1/3/6/8）しか付けないため、ミラー系は非対応として
@@ -327,6 +338,28 @@ mod tests {
         let result = correct_orientation(img.clone(), Orientation::Rotate90CW);
         // 90度回転すると、幅と高さが入れ替わる
         assert_eq!(result.dimensions(), (100, 100));
+    }
+
+    #[test]
+    fn supports_lossless_rotation_rejects_heic_family() {
+        for ext in ["heic", "heif", "avif", "HEIC", "Heif", "AVIF"] {
+            assert!(
+                !supports_lossless_rotation(ext),
+                "{ext} should not support lossless rotation"
+            );
+        }
+    }
+
+    #[test]
+    fn supports_lossless_rotation_accepts_existing_formats() {
+        for ext in [
+            "jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "tif", "JPG",
+        ] {
+            assert!(
+                supports_lossless_rotation(ext),
+                "{ext} should support lossless rotation"
+            );
+        }
     }
 
     #[test]

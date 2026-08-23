@@ -810,20 +810,39 @@ where
                             };
 
                             if degrees != 0 {
-                                item.add_log(
-                                    LogLevel::Info,
-                                    format!("Applying lossless rotation: {degrees}°"),
-                                );
-                                match orientation::rotate_file_in_place(&target_path, degrees) {
-                                    Ok(()) => {
-                                        item.derived.rotation_applied = true;
-                                        item.add_log(LogLevel::Info, "Image rotated losslessly");
-                                    }
-                                    Err(e) => {
-                                        item.add_log(
-                                            LogLevel::Error,
-                                            format!("Failed to rotate image: {e}"),
-                                        );
+                                let extension = target_path
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or("");
+
+                                if !orientation::supports_lossless_rotation(extension) {
+                                    // HEIC/HEIF/AVIF は image crate がデコードできないため、
+                                    // image::open に流してエラーにする前に判定してスキップする（#31）。
+                                    item.add_log(
+                                        LogLevel::Warning,
+                                        format!(
+                                            "Lossless rotation is not supported for this format ({extension}), skipping rotation"
+                                        ),
+                                    );
+                                } else {
+                                    item.add_log(
+                                        LogLevel::Info,
+                                        format!("Applying lossless rotation: {degrees}°"),
+                                    );
+                                    match orientation::rotate_file_in_place(&target_path, degrees) {
+                                        Ok(()) => {
+                                            item.derived.rotation_applied = true;
+                                            item.add_log(
+                                                LogLevel::Info,
+                                                "Image rotated losslessly",
+                                            );
+                                        }
+                                        Err(e) => {
+                                            item.add_log(
+                                                LogLevel::Error,
+                                                format!("Failed to rotate image: {e}"),
+                                            );
+                                        }
                                     }
                                 }
                             }
