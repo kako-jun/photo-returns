@@ -234,6 +234,44 @@ mod tests {
         assert_eq!(sanitize_tag("jp"), Some("jp".to_string()));
     }
 
+    #[test]
+    fn sanitize_31_chars_is_not_truncated() {
+        // 境界-1: MAX_TAG_LEN(32) の1文字手前は切り詰められず、31文字のまま通る。
+        let raw = "a".repeat(31);
+        let got = sanitize_tag(&raw).unwrap();
+        assert_eq!(got.chars().count(), 31);
+        assert_eq!(got, raw);
+    }
+
+    #[test]
+    fn sanitize_33_chars_truncates_exactly_one_char() {
+        // 境界+1: 33文字入力は32文字に切り詰められる（1文字だけ落ちる）。
+        let raw = "a".repeat(33);
+        let got = sanitize_tag(&raw).unwrap();
+        assert_eq!(got.chars().count(), 32);
+        assert_eq!(got, "a".repeat(32));
+    }
+
+    #[test]
+    fn sanitize_truncates_non_ascii_without_breaking_char_boundary() {
+        // 32文字超の非ASCII（日本語）を切り詰めても、マルチバイト文字の途中で
+        // 切れてパニックしたり不正なUTF-8にならず、ちょうど32"文字"に揃うこと。
+        let raw = "あ".repeat(40);
+        let got = sanitize_tag(&raw).unwrap();
+        assert_eq!(got.chars().count(), 32);
+        assert_eq!(got, "あ".repeat(32));
+    }
+
+    #[test]
+    fn sanitize_google_photos_flagship_example() {
+        // docs のフラッグシップ例: フォルダ名 "Google フォト" をタグ化すると
+        // 空白が '-' に置換されて "Google-フォト" になる（非ASCIIはそのまま保持）。
+        assert_eq!(
+            sanitize_tag("Google フォト"),
+            Some("Google-フォト".to_string())
+        );
+    }
+
     // ===== parent_folder_name =====
 
     #[test]
