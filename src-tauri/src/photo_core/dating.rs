@@ -47,7 +47,10 @@ pub(crate) fn extract_date_from_filename(filename: &str) -> Option<DateTime<Loca
 
     // パターン3: Unixタイムスタンプ（ミリ秒、13桁）
     // 例: 1763020644906.jpg (Cshotバースト写真等)
-    let re_ts = Regex::new(r"^(\d{13})").ok()?;
+    // 例: LINE_MOVIE_1540357476150.mp4
+    //
+    // 長い数字IDの一部を誤認しないよう、13桁の直後が数字でないことを要求する。
+    let re_ts = Regex::new(r"(?:^|[_\-\s])(\d{13})(?:\D|$)").ok()?;
     if let Some(caps) = re_ts.captures(filename) {
         let ts_ms: i64 = caps.get(1)?.as_str().parse().ok()?;
         let ts_sec = ts_ms / 1000;
@@ -58,7 +61,10 @@ pub(crate) fn extract_date_from_filename(filename: &str) -> Option<DateTime<Loca
 
     // パターン4: YYYYMMDDのみ（時刻なし）
     // 例: IMG-20250115-WA0001.jpg (WhatsApp)
-    let re3 = Regex::new(r"(\d{4})(\d{2})(\d{2})").ok()?;
+    //
+    // 長い数字IDの途中を日付として誤認しないよう、前後が数字でないことを要求する。
+    // 例: line_314408166989840.jpg は 3144-08-16 として扱ってはいけない。
+    let re3 = Regex::new(r"(?:^|\D)(\d{4})(\d{2})(\d{2})(?:\D|$)").ok()?;
     if let Some(caps) = re3.captures(filename) {
         let year: i32 = caps.get(1)?.as_str().parse().ok()?;
         let month: u32 = caps.get(2)?.as_str().parse().ok()?;
@@ -179,13 +185,18 @@ mod tests {
     }
 
     #[test]
-    fn extract_p3_timestamp_must_be_at_start_falls_through_to_p4() {
-        // quirk(characterization): P3 は先頭アンカー(^)なので、先頭に無い13桁は
-        // P3 にマッチしない。しかし数字列 "1763020644906" は P4 の (\d{4})(\d{2})(\d{2})
-        // に部分マッチし、1763-02-06 という（タイムスタンプ由来とは無関係な）日付として
-        // 拾われる。実装の現状挙動をそのまま pin する。
+    fn extract_p3_unix_ms_timestamp_after_prefix_returns_some() {
+        let got = extract_date_from_filename("LINE_MOVIE_1540357476150.mp4");
+        assert!(got.is_some());
+    }
+
+    #[test]
+    fn extract_p3_timestamp_must_be_at_start_and_does_not_fall_through() {
+        // P3 は先頭アンカー(^)なので、先頭に無い13桁は P3 にマッチしない。
+        // P4 も長い数字列の途中を拾わないため、タイムスタンプ由来とは無関係な
+        // 1763-02-06 のような偽日付にはしない。
         let got = extract_date_from_filename("x1763020644906.jpg");
-        assert_eq!(got, Some(local(1763, 2, 6, 0, 0, 0)));
+        assert_eq!(got, None);
     }
 
     #[test]
@@ -199,6 +210,12 @@ mod tests {
     fn extract_p4_plain_eight_digits() {
         let got = extract_date_from_filename("20250115.jpg");
         assert_eq!(got, Some(local(2025, 1, 15, 0, 0, 0)));
+    }
+
+    #[test]
+    fn extract_none_for_line_long_numeric_id() {
+        let got = extract_date_from_filename("line_314408166989840.jpg");
+        assert_eq!(got, None);
     }
 
     #[test]
