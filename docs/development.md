@@ -70,7 +70,7 @@
 - EXIF 日付抽出
 - ファイルリネーム（YYYY-MM-DD_HH-MM-SS 形式）
 - ディレクトリ階層作成（YYYY/YYYY-MM/YYYY-MM-DD）
-- マルチフォーマット対応（画像10種、動画11種）
+- マルチフォーマット対応（画像11種、動画11種）
 - rayon による並列処理
 - 画像向き検出・修正
 - バースト写真検出（3秒以内に3枚以上）
@@ -184,6 +184,24 @@
   `e2e_exclude_system_artifacts_disabled_includes_trashed`（ゴミ混じりフィクスチャで
   scan→process の出力に混入しないこと・`ExcludedSummary` の件数を機械検証）
 
+### Phase 10: HEIC/HEIF/AVIF 対応（#31）✅
+- `is_image_file` が `heic`/`heif`/`avif` を認識するようになった（従来はスキャン対象外で、
+  存在しなかったことになっていた）。EXIF 抽出は `kamadak-exif` の ISO BMFF パーサ
+  （`isobmff.rs`）が既に対応しており、追加依存なしで撮影日時・サブ秒・TZ・Orientation・
+  寸法を JPEG と同じ `get_exif_info` で取得できる（手組みの HEIC フィクスチャで実測確認済み）
+- ロスレス回転は非対応（`image` crate 0.24 が HEIF をデコードできない）。
+  `orientation::supports_lossless_rotation(extension)` で事前に判定し、`image::open` を
+  呼んでエラーにする代わりに警告ログを残してスキップする。ミラー系 Orientation の
+  スキップと同じ粒度・同じ呼び出し箇所（`photo_core::mod` の回転処理）で判定する
+- フロント `lib/orientationQueue.ts` の `selectOrientationQueue` は `supportsLosslessRotation`
+  でも絞り込み、HEIC/HEIF/AVIF を方向確認ポップアップの対象から除外する（対象に出すと
+  人間が4方向を確定しても回転が適用されず「何も起きない」体験になるため）
+- サムネイル/ライトボックス（`useMediaTableColumns.tsx` / `LightBox.tsx`）は `<img>` に
+  `onError` を追加し、webview がデコードできない場合はレイアウトを崩さず拡張子名の
+  プレースホルダに切り替える（Linux WebKitGTK での表示可否は未検証）
+- 新しい画像デコードライブラリ（libheif 等）は追加しない。ロスレス回転・トランスコードは
+  スコープ外（元ファイルをそのまま安全な場所へ移すツールという方針を維持）
+
 ## 主要機能
 
 ### 自動実行される操作
@@ -198,9 +216,12 @@
 2. **向き修正（ロスレス）**
    - EXIF orientation タグを読み取り
    - 値 1/3/6/8（回転）のみ対応。ミラー系 2/4/5/7 は非対応でスキップ＋ログ
+   - HEIC/HEIF/AVIF は `image` crate がデコードできないため形式単位で非対応。事前判定で
+     スキップ＋ログ（EXIF の日時・向き・寸法自体は読める。#31）
    - JPEG は turbojpeg(libjpeg-turbo) の DCT 領域変換で**無劣化**回転（EXIF/ICC を保持）。PNG 等は image クレート
    - **処理後にEXIF Orientation=1にリセット**（date/GPS は保持したまま二重回転を防ぐ）
-   - 実装: `orientation::rotate_file_in_place` / `exif_orientation_to_degrees` / `is_mirror_orientation`
+   - 実装: `orientation::rotate_file_in_place` / `exif_orientation_to_degrees` / `is_mirror_orientation` /
+     `supports_lossless_rotation`
 
 3. **並列処理**
    - rayon によるマルチスレッドスキャン/処理
