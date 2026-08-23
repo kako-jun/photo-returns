@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  check:
+  frontend:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,13 +20,24 @@ jobs:
           cache: 'npm'
 
       - name: Install frontend dependencies
+        id: npm_ci
         run: npm ci
 
+      # build と test は互いに依存しない（vitest はビルド成果物を使わない）ため、
+      # 一方が失敗してももう一方を実行し、両方の結果を1回のCI実行で見えるようにする。
       - name: Build frontend (tsc + vite)
+        if: always() && steps.npm_ci.outcome == 'success'
         run: npm run build
 
       - name: Frontend tests (vitest)
+        if: always() && steps.npm_ci.outcome == 'success'
         run: npm test
+
+  rust:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -39,6 +50,7 @@ jobs:
           workspaces: './src-tauri -> target'
 
       - name: Install system dependencies for Tauri
+        id: system_deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -53,18 +65,27 @@ jobs:
       # turbojpeg-sys は同梱 libjpeg-turbo(>=3.0) を cmake で vendor ビルドする。
       # SIMD(require-simd)に nasm が必須。cmake/gcc は runner に既存。
 
+      # fmt / clippy / check は互いに独立した判定なので、どれか1つが失敗しても
+      # 残りを実行し、1回のCI実行で全ての失敗を見せる（fmt失敗がビルドエラーを
+      # 隠さないようにする。#39 の原因）。test だけは check の成功に依存させる
+      # （ビルドが通らない状態で test を走らせても新しい情報は増えない）。
       - name: Rust format check
+        if: always() && steps.system_deps.outcome == 'success'
         working-directory: src-tauri
         run: cargo fmt --check
 
       - name: Rust clippy
+        if: always() && steps.system_deps.outcome == 'success'
         working-directory: src-tauri
         run: cargo clippy -- -D warnings
 
       - name: Rust check
+        id: rust_check
+        if: always() && steps.system_deps.outcome == 'success'
         working-directory: src-tauri
         run: cargo check
 
       - name: Rust test
+        if: always() && steps.rust_check.outcome == 'success'
         working-directory: src-tauri
         run: cargo test
