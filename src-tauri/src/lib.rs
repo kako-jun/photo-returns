@@ -3,22 +3,27 @@ pub mod orientation;
 pub mod photo_core;
 pub mod video_metadata;
 
-use photo_core::{MediaInfo, ProcessOptions, ProcessResult, ProgressEvent};
+use photo_core::{MediaInfo, ProcessOptions, ProcessResult, ProgressEvent, ScanOutcome};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::ipc::Channel;
 
 /// 指定ディレクトリのメディアファイルをスキャンして情報を取得
+///
+/// `exclude_system_artifacts` はトップレベル引数のため Tauri が camelCase 化し、フロントは
+/// `excludeSystemArtifacts` として渡す（#28）。戻り値は除外サマリを含む `ScanOutcome`。
 #[tauri::command]
 fn scan_media(
     input_dir: String,
     include_videos: bool,
     parallel: bool,
-) -> Result<Vec<MediaInfo>, String> {
+    exclude_system_artifacts: bool,
+) -> Result<ScanOutcome, String> {
     let path = PathBuf::from(input_dir);
     let options = ProcessOptions {
         parallel,
         include_videos,
+        exclude_system_artifacts,
         ..Default::default()
     };
     photo_core::scan_media(&path, &options).map_err(|e| e.to_string())

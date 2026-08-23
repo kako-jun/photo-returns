@@ -117,7 +117,7 @@ fn e2e_scan_process_places_into_date_hierarchy() {
     let (input, output) = workspace("hierarchy");
     write_plain_jpeg(&input, "IMG_20240115_103000.jpg", 16, 16);
 
-    let mut media = scan_media(&input, &opts()).unwrap();
+    let mut media = scan_media(&input, &opts()).unwrap().media;
     assert_eq!(media.len(), 1, "1ファイルがスキャンされる");
     let result = process_media_with_list(&mut media, &output, &opts()).unwrap();
     assert_eq!(result.processed_files, 1);
@@ -141,7 +141,7 @@ fn e2e_timezone_override_shifts_output_filename() {
     let (input, output) = workspace("tz");
     write_plain_jpeg(&input, "IMG_20240115_103000.jpg", 16, 16);
 
-    let mut media = scan_media(&input, &opts()).unwrap();
+    let mut media = scan_media(&input, &opts()).unwrap().media;
     // ユーザーが "+00:00"（UTC と仮定）を選択 → JST(+9h) 基準へ補正
     media[0].overrides.timezone_offset = Some("+00:00".to_string());
     process_media_with_list(&mut media, &output, &opts()).unwrap();
@@ -173,7 +173,7 @@ fn e2e_lossless_rotation_resets_exif_orientation() {
     let (input, output) = workspace("rotate");
     write_jpeg_with_orientation(&input, "IMG_20240115_103000.jpg", 32, 16, 6);
 
-    let mut media = scan_media(&input, &opts()).unwrap();
+    let mut media = scan_media(&input, &opts()).unwrap().media;
     assert_eq!(
         media[0].source.exif_orientation,
         Some(6),
@@ -217,7 +217,7 @@ fn e2e_mirror_orientation_is_skipped_with_log() {
     let (input, output) = workspace("mirror");
     write_jpeg_with_orientation(&input, "IMG_20240115_103000.jpg", 32, 16, 2);
 
-    let mut media = scan_media(&input, &opts()).unwrap();
+    let mut media = scan_media(&input, &opts()).unwrap().media;
     media[0].overrides.rotation_mode = Some("exif".to_string());
     let result = process_media_with_list(&mut media, &output, &opts()).unwrap();
 
@@ -249,7 +249,7 @@ fn e2e_processes_only_given_subset() {
     write_plain_jpeg(&input, "IMG_20240115_100000.jpg", 16, 16);
     write_plain_jpeg(&input, "IMG_20240115_110000.jpg", 16, 16);
 
-    let media = scan_media(&input, &opts()).unwrap();
+    let media = scan_media(&input, &opts()).unwrap().media;
     assert_eq!(media.len(), 2);
 
     // 11:00 のファイル（B）だけをサブセットで処理（リトライで失敗ファイルのみ送る相当）
@@ -285,7 +285,7 @@ fn e2e_progress_events_fire_once_per_file() {
         );
     }
 
-    let mut media = scan_media(&input, &opts()).unwrap();
+    let mut media = scan_media(&input, &opts()).unwrap().media;
     assert_eq!(media.len(), 3);
 
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -305,4 +305,80 @@ fn e2e_progress_events_fire_once_per_file() {
     let mut dones: Vec<usize> = evs.iter().map(|e| e.done).collect();
     dones.sort_unstable();
     assert_eq!(dones, vec![1, 2, 3], "done は 1..=total を1度ずつ網羅する");
+}
+
+// ---------------------------------------------------------------------------
+// #28: システム生成物（Android trashed / thumbnails / nomedia / AppleDouble / OS メタデータ）
+// は既定で scan 対象から除外され、出力に混入せず ExcludedSummary に集計される
+// ---------------------------------------------------------------------------
+#[test]
+fn e2e_exclude_system_artifacts_default_on() {
+    let (input, output) = workspace("exclude_default");
+    // 本物の写真
+    write_plain_jpeg(&input, "IMG_20240115_103000.jpg", 16, 16);
+
+    // ゴミ（各ルール1件ずつ）
+    write_plain_jpeg(&input, ".trashed-1699999999.jpg", 16, 16);
+    let thumbs_dir = input.join(".thumbnails");
+    std::fs::create_dir_all(&thumbs_dir).unwrap();
+    write_plain_jpeg(&thumbs_dir, "IMG_0001.jpg", 8, 8);
+    std::fs::write(input.join(".nomedia"), b"").unwrap();
+    write_plain_jpeg(&input, "._IMG_1234.JPG", 16, 16);
+    std::fs::write(input.join(".DS_Store"), b"").unwrap();
+
+    let outcome = scan_media(&input, &opts()).unwrap();
+    assert_eq!(outcome.media.len(), 1, "本物の写真だけがスキャンされるはず");
+    assert_eq!(outcome.excluded.total, 5, "5件のゴミが除外されるはず");
+
+    let rules: Vec<&str> = outcome
+        .excluded
+        .by_rule
+        .iter()
+        .map(|rc| rc.rule.as_str())
+        .collect();
+    assert_eq!(
+        rules,
+        vec![
+            "trashed",
+            "thumbnails",
+            "nomedia",
+            "apple_double",
+            "os_metadata"
+        ],
+        "ルール別内訳は仕様の表の順で並ぶはず"
+    );
+    assert!(
+        outcome.excluded.by_rule.iter().all(|rc| rc.count == 1),
+        "各ルール1件ずつ"
+    );
+
+    let mut media = outcome.media;
+    let result = process_media_with_list(&mut media, &output, &opts()).unwrap();
+    assert_eq!(result.processed_files, 1);
+
+    let outputs = collect_output_jpegs(&output);
+    assert_eq!(outputs.len(), 1, "ゴミは出力に混入しないはず");
+}
+
+// ---------------------------------------------------------------------------
+// #28: exclude_system_artifacts=false なら従来どおりゴミも拾う（後方互換）
+// ---------------------------------------------------------------------------
+#[test]
+fn e2e_exclude_system_artifacts_disabled_includes_trashed() {
+    let (input, _output) = workspace("exclude_disabled");
+    write_plain_jpeg(&input, "IMG_20240115_103000.jpg", 16, 16);
+    write_plain_jpeg(&input, ".trashed-1699999999.jpg", 16, 16);
+
+    let options = ProcessOptions {
+        parallel: false,
+        exclude_system_artifacts: false,
+        ..Default::default()
+    };
+    let outcome = scan_media(&input, &options).unwrap();
+    assert_eq!(
+        outcome.media.len(),
+        2,
+        "exclude_system_artifacts=false なら trashed も拾うはず"
+    );
+    assert_eq!(outcome.excluded.total, 0, "除外は行われないはず");
 }

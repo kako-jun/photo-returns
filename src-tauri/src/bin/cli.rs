@@ -7,7 +7,7 @@ fn main() {
 
     if args.len() < 3 {
         eprintln!(
-            "Usage: cli <input_dir> <output_dir> [--scan-only] [--no-parallel] [--no-videos]"
+            "Usage: cli <input_dir> <output_dir> [--scan-only] [--no-parallel] [--no-videos] [--include-system-artifacts]"
         );
         eprintln!("Example: cli /mnt/sd/20251114/photo ~/Desktop/photo_test");
         std::process::exit(1);
@@ -18,6 +18,9 @@ fn main() {
     let scan_only = args.iter().any(|a| a == "--scan-only");
     let no_parallel = args.iter().any(|a| a == "--no-parallel");
     let no_videos = args.iter().any(|a| a == "--no-videos");
+    // 既定は除外ON（#28）。明示的に --include-system-artifacts を渡した時だけ従来どおり
+    // trashed/thumbnails/nomedia等も含めて全部拾う。
+    let include_system_artifacts = args.iter().any(|a| a == "--include-system-artifacts");
 
     if !input_dir.exists() {
         eprintln!(
@@ -34,23 +37,37 @@ fn main() {
         timezone_offset: None,
         cleanup_temp: false,
         auto_correct_orientation: false,
-        exclude_system_artifacts: true, // 既定ON（#28）。フラグでの切り替えは追って配線
+        exclude_system_artifacts: !include_system_artifacts,
     };
 
     println!("Input:  {}", input_dir.display());
     println!("Output: {}", output_dir.display());
     println!(
-        "Options: parallel={}, videos={}",
-        options.parallel, options.include_videos
+        "Options: parallel={}, videos={}, exclude_system_artifacts={}",
+        options.parallel, options.include_videos, options.exclude_system_artifacts
     );
     println!();
 
     if scan_only {
         println!("=== Scan Only Mode ===");
         match photo_core::scan_media(&input_dir, &options) {
-            Ok(media) => {
+            Ok(photo_core::ScanOutcome { media, excluded }) => {
                 println!("Found {} media files", media.len());
                 println!();
+
+                if excluded.total > 0 {
+                    println!("=== Excluded ({} files) ===", excluded.total);
+                    for rule_count in &excluded.by_rule {
+                        println!("  {}: {}", rule_count.rule, rule_count.count);
+                    }
+                    if !excluded.samples.is_empty() {
+                        println!("  Samples:");
+                        for sample in &excluded.samples {
+                            println!("    - {sample}");
+                        }
+                    }
+                    println!();
+                }
 
                 let photos = media
                     .iter()
@@ -157,6 +174,7 @@ fn main() {
                 println!("Done!");
                 println!("  Total:     {}", result.total_files);
                 println!("  Processed: {}", result.processed_files);
+                println!("  Excluded:  {}", result.excluded_files);
                 println!("  Errors:    {}", result.errors.len());
                 if !result.errors.is_empty() {
                     println!();

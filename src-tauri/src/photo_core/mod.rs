@@ -181,6 +181,11 @@ pub struct ProcessResult {
     pub processed_files: usize,
     pub media: Vec<MediaInfo>,
     pub errors: Vec<String>,
+    /// scan 時にシステム生成物として除外されたファイル数（#28）。
+    /// `process_media_with_list` / `process_media_with_list_progress` は事前スキャン済みの
+    /// リストを受け取るだけで自身は scan しないため常に 0。scan から行う `process_media` のみ
+    /// scan 結果の `ExcludedSummary::total` を反映する。
+    pub excluded_files: usize,
 }
 
 /// 除外ルール1件分の件数（#28）。ルールの並び順を安定させるため HashMap ではなく Vec で持つ。
@@ -198,6 +203,13 @@ pub struct ExcludedSummary {
     pub by_rule: Vec<ExcludedRuleCount>,
     /// 除外された相対パスのサンプル（先頭20件まで）。
     pub samples: Vec<String>,
+}
+
+/// `scan_media` の戻り値。スキャンされたメディアと除外サマリを両方持つ（#28）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanOutcome {
+    pub media: Vec<MediaInfo>,
+    pub excluded: ExcludedSummary,
 }
 
 /// 進捗イベント（ファイル1件完了ごとにフロントへ送る、#4）
@@ -252,13 +264,25 @@ impl MediaInfo {
 }
 
 /// 対象ディレクトリ内のメディアファイルをスキャン
-pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<MediaInfo>> {
-    let files: Vec<_> = WalkDir::new(input_dir)
+///
+/// `options.exclude_system_artifacts`（既定 true）が有効な場合、Android の `.trashed-*`・
+/// `.thumbnails` 配下・`.nomedia`・AppleDouble（`._*`）・OS メタデータ（`.DS_Store` /
+/// `Thumbs.db`）を、拡張子判定・EXIF読み・日付抽出・バースト検出より前に除外する（#28）。
+/// 除外されたファイルは `MediaInfo` を作らないため、バースト検出のインデックスにも混ざらない。
+/// 判定は入力ディレクトリからの相対パスに対して行う（`exclude::partition` 参照）。
+pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutcome> {
+    let all_entries: Vec<_> = WalkDir::new(input_dir)
         .follow_links(false)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_file())
         .collect();
+
+    let (files, excluded_summary) = if options.exclude_system_artifacts {
+        exclude::partition(input_dir, all_entries)
+    } else {
+        (all_entries, ExcludedSummary::default())
+    };
 
     let media = Arc::new(Mutex::new(Vec::new()));
 
@@ -442,7 +466,10 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<Vec<Medi
         }
     }
 
-    Ok(result)
+    Ok(ScanOutcome {
+        media: result,
+        excluded: excluded_summary,
+    })
 }
 
 /// タイムゾーン補正の基準オフセット（秒）。
@@ -568,13 +595,20 @@ where
 }
 
 /// メディアファイルをリネームして階層構造にコピー（再スキャンあり版、CLI用）
+///
+/// scan 時に除外されたシステム生成物の件数（#28）は `ProcessResult::excluded_files` に載せる。
 pub fn process_media(
     input_dir: &Path,
     output_dir: &Path,
     options: &ProcessOptions,
 ) -> Result<ProcessResult> {
-    let mut media = scan_media(input_dir, options)?;
-    process_media_inner(&mut media, output_dir, options, |_| {})
+    let ScanOutcome {
+        mut media,
+        excluded,
+    } = scan_media(input_dir, options)?;
+    let mut result = process_media_inner(&mut media, output_dir, options, |_| {})?;
+    result.excluded_files = excluded.total;
+    Ok(result)
 }
 
 /// メディアファイルをリネームして階層構造にコピー（内部実装）
@@ -837,6 +871,9 @@ where
         processed_files,
         media: media.clone(),
         errors: errors_vec,
+        // scan を伴わない呼び出し（事前スキャン済みリストを処理するだけ）では常に 0。
+        // `process_media` はこの後 scan 結果の `ExcludedSummary::total` で上書きする。
+        excluded_files: 0,
     })
 }
 
