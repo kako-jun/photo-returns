@@ -183,16 +183,6 @@
   box-shadow: 0 0 6px rgba(255, 51, 51, 0.5);
 }
 
-.vu-meter-fill-no_change {
-  background: linear-gradient(
-    to right,
-    rgba(80, 80, 80, 0.3) 0%,
-    rgba(120, 120, 120, 0.6) 70%,
-    #888 100%
-  );
-  box-shadow: 0 0 4px rgba(128, 128, 128, 0.4);
-}
-
 @keyframes vu-pulse {
   from {
     opacity: 0.8;
@@ -486,12 +476,6 @@
   border-color: rgba(255, 51, 51, 0.4);
   color: #ff4444;
   text-shadow: 0 0 6px rgba(255, 51, 51, 0.5);
-}
-
-.led-badge-no_change {
-  background: rgba(80, 80, 80, 0.2);
-  border-color: rgba(120, 120, 120, 0.3);
-  color: #888;
 }
 
 @keyframes led-blink {

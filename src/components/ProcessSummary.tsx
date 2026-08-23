@@ -9,7 +9,6 @@ interface ProcessSummaryProps {
 export function ProcessSummary({ mediaList, onRetryFailed }: ProcessSummaryProps) {
   const completedCount = mediaList.filter((item) => item.status === 'completed').length;
   const errorCount = mediaList.filter((item) => item.status === 'error').length;
-  const skippedCount = mediaList.filter((item) => item.status === 'no_change').length;
 
   const errorFiles = mediaList
     .map((item, index) => ({ item, index }))
@@ -76,21 +75,6 @@ export function ProcessSummary({ mediaList, onRetryFailed }: ProcessSummaryProps
                 OK: {String(completedCount).padStart(4, '0')}
               </span>
             </div>
-
-            {skippedCount > 0 && (
-              <div className="flex items-center gap-2">
-                <span
-                  className="inline-block h-2 w-2 rounded-full"
-                  style={{ background: '#888' }}
-                />
-                <span
-                  className="led-display text-xs"
-                  style={{ color: '#888', letterSpacing: '0.06em' }}
-                >
-                  SKIP: {String(skippedCount).padStart(4, '0')}
-                </span>
-              </div>
-            )}
 
             {errorCount > 0 && (
               <div className="flex items-center gap-2">
