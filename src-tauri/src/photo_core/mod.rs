@@ -21,7 +21,8 @@ mod layout;
 mod provenance;
 
 use dating::{
-    build_stem, extract_date_from_filename, get_file_created_date, get_file_modified_date,
+    build_stem, compare_scan_order, extract_date_from_filename, get_file_created_date,
+    get_file_modified_date,
 };
 use exif_info::{get_exif_info, is_image_file, is_video_file, ExifInfo};
 use layout::{create_backup, create_date_hierarchy, create_unsorted_dir};
@@ -491,13 +492,20 @@ pub fn scan_media(input_dir: &Path, options: &ProcessOptions) -> Result<ScanOutc
         .map(|mutex| mutex.into_inner().unwrap())
         .unwrap_or_else(|arc| arc.lock().unwrap().clone());
 
-    // 並列処理後は順序が不定のため、撮影日時でソートしてからバースト検出を行う
-    // date_taken が None のファイルは末尾に移動する
-    result.sort_by(|a, b| match (a.dates.date_taken, b.dates.date_taken) {
-        (Some(da), Some(db)) => da.cmp(&db),
-        (Some(_), None) => std::cmp::Ordering::Less,
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => a.source.file_name.cmp(&b.source.file_name),
+    // 並列処理後は順序が不定のため、撮影日時でソートしてからバースト検出を行う。
+    // date_taken だけでは同一秒内バースト写真が全てタイになり、安定ソートの性質上
+    // 非決定な処理完了順がそのまま残ってしまう（#29 決定性仕様違反）ため、
+    // subsec_time → original_path で完全に決定的なタイブレークを行う
+    // （`compare_scan_order` 参照）。
+    result.sort_by(|a, b| {
+        compare_scan_order(
+            a.dates.date_taken,
+            a.dates.subsec_time,
+            &a.source.original_path,
+            b.dates.date_taken,
+            b.dates.subsec_time,
+            &b.source.original_path,
+        )
     });
 
     // バースト検出を実行

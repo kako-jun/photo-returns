@@ -524,3 +524,53 @@ fn e2e_exclusion_does_not_interfere_with_burst_detection() {
         "除外後も burst_index は 1..3 の連番のはず"
     );
 }
+
+// ---------------------------------------------------------------------------
+// #29 修正2: 同秒内バーストの burst_index 割り当ては parallel: true でも決定的
+// （並列スキャンのスレッドスケジューリング依存で実行のたびに入れ替わらないこと）
+// ---------------------------------------------------------------------------
+#[test]
+fn e2e_parallel_scan_burst_index_is_deterministic_across_runs() {
+    let (input, _output) = workspace("parallel_determinism");
+    // 3枚とも同一秒（ファイル名から抽出される日時が完全一致）。
+    // subsec も EXIF もないため、タイブレークは original_path のみで決まる。
+    write_plain_jpeg(&input, "a_20240115_100000.jpg", 16, 16);
+    write_plain_jpeg(&input, "b_20240115_100000.jpg", 16, 16);
+    write_plain_jpeg(&input, "c_20240115_100000.jpg", 16, 16);
+
+    let parallel_opts = ProcessOptions {
+        parallel: true,
+        ..Default::default()
+    };
+
+    // 複数回スキャンし、original_path → burst_index の対応が毎回同一であることを確認する。
+    let mut previous: Option<Vec<(PathBuf, Option<usize>)>> = None;
+    for run in 0..10 {
+        let outcome = scan_media(&input, &parallel_opts).unwrap();
+        assert_eq!(outcome.media.len(), 3);
+
+        let mut mapping: Vec<(PathBuf, Option<usize>)> = outcome
+            .media
+            .iter()
+            .map(|m| (m.source.original_path.clone(), m.derived.burst_index))
+            .collect();
+        mapping.sort_by(|a, b| a.0.cmp(&b.0));
+
+        if let Some(prev) = &previous {
+            assert_eq!(
+                &mapping, prev,
+                "run {run}: burst_index の割り当てが前回実行と異なる（非決定的）"
+            );
+        }
+        previous = Some(mapping);
+    }
+
+    // 割り当てられた burst_index 自体も 1..3 の連番で、original_path の昇順と一致するはず。
+    let final_mapping = previous.unwrap();
+    let indices: Vec<Option<usize>> = final_mapping.iter().map(|(_, idx)| *idx).collect();
+    assert_eq!(
+        indices,
+        vec![Some(1), Some(2), Some(3)],
+        "original_path 昇順（a, b, c）で burst_index 1..3 が振られるはず: {final_mapping:?}"
+    );
+}

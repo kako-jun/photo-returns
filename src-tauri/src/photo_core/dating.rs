@@ -131,6 +131,37 @@ pub(crate) fn build_stem(
     stem
 }
 
+/// `scan_media` の並列スキャン後の並びを決定的にするための比較関数（#29 確定仕様
+/// 「同一入力・同一オプションなら常に同じ名前になる」＝決定性を担保する）。
+///
+/// `ProcessOptions.parallel` の並列スキャンはスレッドスケジューリング依存で、処理完了順が
+/// 実行のたびに変わりうる。バースト検出（`detect_burst_groups`）はこのソート後の並びを前提に
+/// 走るため、比較キーが弱いと「ソート前の非決定な並び」がタイの中に残ってしまう
+/// （`sort_by` は安定ソートなので、タイは元の並び順のまま保持される）。
+///
+/// 優先順位:
+///   1. `date_taken`（`None` は末尾。撮影日時なし＝unsorted 行きのため最後でよい）
+///   2. `subsec_time`（`None` は `Some` より先。同一秒内はミリ秒昇順で並ぶ）
+///   3. `original_path`（最終タイブレーク）。`date_taken`/`subsec_time` が両方 None で
+///      揃うケースも含め、常にこれで一意に決まる。以前は `file_name` で比較していたが、
+///      異なるディレクトリ間ではファイル名が重複しうるため、常に一意な `original_path` に
+///      統一した。
+pub(crate) fn compare_scan_order(
+    a_date: Option<DateTime<Local>>,
+    a_subsec: Option<u32>,
+    a_path: &Path,
+    b_date: Option<DateTime<Local>>,
+    b_subsec: Option<u32>,
+    b_path: &Path,
+) -> std::cmp::Ordering {
+    a_date
+        .is_none()
+        .cmp(&b_date.is_none())
+        .then_with(|| a_date.cmp(&b_date))
+        .then_with(|| a_subsec.cmp(&b_subsec))
+        .then_with(|| a_path.cmp(b_path))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -387,5 +418,68 @@ mod tests {
             build_stem(None, None, Some(1), "IMG_1234", None),
             "IMG_1234_01"
         );
+    }
+
+    // ===== compare_scan_order =====
+
+    #[test]
+    fn compare_scan_order_same_second_orders_by_subsec_ascending() {
+        // 同一秒・異なるサブ秒の3枚がサブ秒の昇順に並ぶ。
+        let d = local(2025, 6, 1, 12, 0, 0);
+        let mut items = [
+            (Some(d), Some(500), Path::new("/in/c.jpg")),
+            (Some(d), Some(100), Path::new("/in/a.jpg")),
+            (Some(d), Some(300), Path::new("/in/b.jpg")),
+        ];
+        items.sort_by(|a, b| compare_scan_order(a.0, a.1, a.2, b.0, b.1, b.2));
+        let subsecs: Vec<Option<u32>> = items.iter().map(|i| i.1).collect();
+        assert_eq!(subsecs, vec![Some(100), Some(300), Some(500)]);
+    }
+
+    #[test]
+    fn compare_scan_order_same_second_no_subsec_orders_by_original_path() {
+        // 同一秒・サブ秒なしの3枚は original_path の昇順で安定して並ぶ。
+        let d = local(2025, 6, 1, 12, 0, 0);
+        let mut items = [
+            (Some(d), None, Path::new("/in/z.jpg")),
+            (Some(d), None, Path::new("/in/a.jpg")),
+            (Some(d), None, Path::new("/in/m.jpg")),
+        ];
+        items.sort_by(|a, b| compare_scan_order(a.0, a.1, a.2, b.0, b.1, b.2));
+        let paths: Vec<&Path> = items.iter().map(|i| i.2).collect();
+        assert_eq!(
+            paths,
+            vec![
+                Path::new("/in/a.jpg"),
+                Path::new("/in/m.jpg"),
+                Path::new("/in/z.jpg"),
+            ]
+        );
+    }
+
+    #[test]
+    fn compare_scan_order_subsec_none_before_some_within_same_second() {
+        // subsec の None は Some より先（同一秒内で「サブ秒情報なし」が先頭に来る）。
+        let d = local(2025, 6, 1, 12, 0, 0);
+        let mut items = [
+            (Some(d), Some(1), Path::new("/in/with-subsec.jpg")),
+            (Some(d), None, Path::new("/in/no-subsec.jpg")),
+        ];
+        items.sort_by(|a, b| compare_scan_order(a.0, a.1, a.2, b.0, b.1, b.2));
+        assert_eq!(items[0].2, Path::new("/in/no-subsec.jpg"));
+        assert_eq!(items[1].2, Path::new("/in/with-subsec.jpg"));
+    }
+
+    #[test]
+    fn compare_scan_order_date_taken_none_sorts_last() {
+        // date_taken が None のファイルは末尾に移動する（既存挙動を維持）。
+        let d = local(2025, 6, 1, 12, 0, 0);
+        let mut items = [
+            (None, None, Path::new("/in/no-date.jpg")),
+            (Some(d), None, Path::new("/in/dated.jpg")),
+        ];
+        items.sort_by(|a, b| compare_scan_order(a.0, a.1, a.2, b.0, b.1, b.2));
+        assert_eq!(items[0].2, Path::new("/in/dated.jpg"));
+        assert_eq!(items[1].2, Path::new("/in/no-date.jpg"));
     }
 }
