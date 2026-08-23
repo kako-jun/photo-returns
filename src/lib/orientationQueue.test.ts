@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { MediaInfo } from '../types';
 import {
   isMirrorOrientation,
+  supportsLosslessRotation,
   exifDegrees,
   selectOrientationQueue,
   directionDelta,
@@ -45,6 +46,25 @@ describe('isMirrorOrientation', () => {
   });
 });
 
+describe('supportsLosslessRotation', () => {
+  it('heic/heif/avif は非対応（大文字小文字は問わない）', () => {
+    expect(supportsLosslessRotation('/a.heic')).toBe(false);
+    expect(supportsLosslessRotation('/a.HEIC')).toBe(false);
+    expect(supportsLosslessRotation('/a.heif')).toBe(false);
+    expect(supportsLosslessRotation('/a.avif')).toBe(false);
+  });
+
+  it('既存対応形式は対応のまま', () => {
+    for (const ext of ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff', 'tif', 'JPG']) {
+      expect(supportsLosslessRotation(`/a.${ext}`)).toBe(true);
+    }
+  });
+
+  it('拡張子なしは対応扱い（空文字はブラックリストに含まれない）', () => {
+    expect(supportsLosslessRotation('/noext')).toBe(true);
+  });
+});
+
 describe('exifDegrees', () => {
   it('3→180, 6→90, 8→270, それ以外→0', () => {
     expect(exifDegrees(3)).toBe(180);
@@ -61,7 +81,7 @@ describe('exifDegrees', () => {
 });
 
 describe('selectOrientationQueue', () => {
-  it('写真 かつ Orientation≠1 かつ 非ミラー だけを残す', () => {
+  it('写真 かつ Orientation≠1 かつ 非ミラー かつ ロスレス回転対応形式 だけを残す', () => {
     const list = [
       media('/a.jpg', { exif_orientation: 6 }), // ○ 写真・回転あり
       media('/b.jpg', { exif_orientation: 1 }), // × 直立（手動 dropdown に任せる）
@@ -71,6 +91,9 @@ describe('selectOrientationQueue', () => {
       media('/f.mp4', { media_type: 'Video', exif_orientation: 6 }), // × 動画は対象外
       media('/g.jpg', { exif_orientation: 3 }), // ○
       media('/h.jpg', { exif_orientation: 8 }), // ○
+      media('/i.heic', { exif_orientation: 6 }), // × HEIC は回転 skip 対象（#31）
+      media('/j.HEIF', { exif_orientation: 3 }), // × HEIF（大文字）も同様
+      media('/k.avif', { exif_orientation: 8 }), // × AVIF も同様
     ];
 
     expect(selectOrientationQueue(list).map((m) => m.original_path)).toEqual([

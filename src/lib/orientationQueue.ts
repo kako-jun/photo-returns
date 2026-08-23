@@ -27,6 +27,18 @@ export function isMirrorOrientation(orientation: number | null): boolean {
 }
 
 /**
+ * 拡張子がロスレス回転に対応しているかどうか。
+ * HEIC/HEIF/AVIF は EXIF は読めるが `image` crate がデコードできず backend がロスレス回転を
+ * skip する（Rust 側 `orientation::supports_lossless_rotation` と同じ判定、#31）。
+ * iPhone の HEIC は Orientation≠1 が大量にあるため、除外しないと「人間が4方向で確定したのに
+ * 何も起きない」という体験になる。大文字小文字は問わない。
+ */
+export function supportsLosslessRotation(path: string): boolean {
+  const extension = path.split('.').pop()?.toLowerCase() ?? '';
+  return !['heic', 'heif', 'avif'].includes(extension);
+}
+
+/**
  * EXIF Orientation → 生ピクセルを正立させるための CW（時計回り）回転角。
  * 非ミラーの回転系のみ対応: 3→180, 6→90, 8→270。1 を含むそれ以外は 0。
  * useMediaTableColumns / backend の写像と一致させる。
@@ -46,7 +58,8 @@ export function exifDegrees(orientation: number | null): number {
 
 /**
  * ポップアップで人間に確認させる対象を抽出する。
- * 条件 = 写真 かつ EXIF Orientation≠1（=回転の疑いがある）かつ 非ミラー。
+ * 条件 = 写真 かつ EXIF Orientation≠1（=回転の疑いがある）かつ 非ミラー かつ
+ * ロスレス回転に対応した形式（HEIC/HEIF/AVIF は backend が回転を skip するため対象外、#31）。
  * EXIF=1（直立扱い）は取りこぼしの受け皿として既存の手動 dropdown に任せる（仕様）。
  * 動画はロスレス画素回転ができないため対象外（別 issue follow-up）。
  */
@@ -56,7 +69,8 @@ export function selectOrientationQueue(media: MediaInfo[]): MediaInfo[] {
       m.media_type === 'Photo' &&
       m.exif_orientation !== null &&
       m.exif_orientation !== 1 &&
-      !isMirrorOrientation(m.exif_orientation)
+      !isMirrorOrientation(m.exif_orientation) &&
+      supportsLosslessRotation(m.original_path)
   );
 }
 
