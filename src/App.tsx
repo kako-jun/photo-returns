@@ -102,7 +102,7 @@ function App() {
     const newExpanded: ExpandedState = {};
     mediaList.forEach((item, index) => {
       // error: 処理失敗 → 確認が必要
-      // pending: 処理待ち、processing: 処理中、completed: 完了、no_change: 変更なし → 展開不要
+      // pending: 処理待ち、processing: 処理中、completed: 完了 → 展開不要
       if (item.status === 'error') {
         newExpanded[index] = true;
       }

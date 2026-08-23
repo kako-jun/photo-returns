@@ -43,7 +43,7 @@ export interface MediaInfo {
   // 対応リストは Rust 単独が正本で、フロントは文字列解析をせずこの値を読むだけにする（#31）。
   supports_lossless_rotation: boolean;
   progress?: number; // 進捗（0-100）
-  status?: 'pending' | 'processing' | 'completed' | 'error' | 'no_change';
+  status?: 'pending' | 'processing' | 'completed' | 'error';
   error_message?: string;
   logs: LogEntry[]; // 処理ログ
 }

@@ -109,19 +109,6 @@ describe('mergeProcessResults', () => {
     expect(merged[1]).toBe(b);
   });
 
-  it('no_change の項目は targets 外なら触らない（誤 error 化しない）', () => {
-    const noChange = media('/keep.jpg', { status: 'no_change', new_path: '' });
-    const failed = media('/fail.jpg', { status: 'pending' });
-    const merged = mergeProcessResults(
-      [noChange, failed],
-      [failed],
-      [media('/fail.jpg', { new_path: '/out/fail.jpg' })]
-    );
-    expect(merged[0]).toBe(noChange); // no_change は据え置き
-    expect(merged[0].status).toBe('no_change');
-    expect(merged[1].status).toBe('completed');
-  });
-
   it('プラットフォーム差のあるパスでも一致させる', () => {
     const item = media('C:\\photos\\x.jpg', { status: 'pending' });
     const resultMedia = [media('C:/photos/x.jpg', { new_path: 'C:/out/x.jpg' })];

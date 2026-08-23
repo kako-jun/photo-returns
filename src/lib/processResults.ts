@@ -75,8 +75,6 @@ export function normalizePathForCompare(path: string): string {
  *
  * 前提:
  * - `targets` は未処理/失敗の項目に限る（`selectRetryTargets` 経由なら error のみ）。
- *   `no_change`（移動不要で正常終了）は現行バックエンドに存在せず targets にも入らないが、
- *   将来導入する場合はこの new_path ベース判定が誤 error 化し得るので注意。
  * - `original_path` は scan が一意に列挙するためキーとして衝突しない。
  */
 export function mergeProcessResults(

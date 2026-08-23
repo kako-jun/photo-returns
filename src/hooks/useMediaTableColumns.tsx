@@ -736,11 +736,7 @@ export function useMediaTableColumns({
         header: 'Status',
         cell: (info) => {
           const status = info.getValue() || 'pending';
-          return (
-            <span className={`led-badge led-badge-${status}`}>
-              {status === 'no_change' ? 'NO CHG' : status.toUpperCase()}
-            </span>
-          );
+          return <span className={`led-badge led-badge-${status}`}>{status.toUpperCase()}</span>;
         },
         size: 90,
       }),

@@ -94,7 +94,7 @@
   - Rotation（回転選択ドロップダウン + EXIF表示）
   - After（回転後プレビュー）
   - New Name（新しいファイル名、クリックでファイルマネージャー表示）
-  - Status（pending/processing/completed/error/no_change）
+  - Status（pending/processing/completed/error）
   - Progress（ファイル毎のプログレスバー）
 - 行展開でProcessingFlow詳細表示
 - Tailwind CSS スタイリング
