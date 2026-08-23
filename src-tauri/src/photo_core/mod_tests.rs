@@ -8,11 +8,12 @@ use std::collections::BTreeSet;
 
 /// フロントエンド契約の機械検証:
 /// MediaInfo はサブ構造体に分割したが `#[serde(flatten)]` により
-/// JSON は flat な 24 キーのまま（`src/types.ts` の `interface MediaInfo`。#29 で
-/// `resolved_provenance_tag` が加わり 23→24 キーになった）。
+/// JSON は flat な 25 キーのまま（`src/types.ts` の `interface MediaInfo`。#29 で
+/// `resolved_provenance_tag` が加わり 23→24 キー、#31 で `supports_lossless_rotation` が
+/// 加わり 24→25 キーになった）。
 /// このテストが落ちたらフロントが壊れるサイン。
 #[test]
-fn mediainfo_wire_format_is_flat_24_keys() {
+fn mediainfo_wire_format_is_flat_25_keys() {
     let info = MediaInfo {
         source: MediaSource {
             original_path: PathBuf::from("/tmp/in.jpg"),
@@ -22,6 +23,7 @@ fn mediainfo_wire_format_is_flat_24_keys() {
             exif_orientation: Some(1),
             width: Some(640),
             height: Some(480),
+            supports_lossless_rotation: true,
         },
         dates: DateCandidates {
             date_taken: None,
@@ -78,6 +80,7 @@ fn mediainfo_wire_format_is_flat_24_keys() {
         "rotation_mode",
         "width",
         "height",
+        "supports_lossless_rotation",
         "logs",
     ]
     .into_iter()
@@ -85,12 +88,12 @@ fn mediainfo_wire_format_is_flat_24_keys() {
 
     assert_eq!(
         actual, expected,
-        "MediaInfo の top-level JSON キーがフロント契約（24キー flat）と一致しません"
+        "MediaInfo の top-level JSON キーがフロント契約（25キー flat）と一致しません"
     );
     assert_eq!(
         actual.len(),
-        24,
-        "MediaInfo の top-level キーは 24 個のはず"
+        25,
+        "MediaInfo の top-level キーは 25 個のはず"
     );
 }
 
@@ -247,6 +250,7 @@ fn media_item(
             exif_orientation: None,
             width: None,
             height: None,
+            supports_lossless_rotation: true,
         },
         dates: DateCandidates {
             date_taken: Some(date),
@@ -664,6 +668,7 @@ fn collision_test_item(
             exif_orientation: None,
             width: None,
             height: None,
+            supports_lossless_rotation: true,
         },
         dates: DateCandidates {
             date_taken: date,

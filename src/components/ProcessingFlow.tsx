@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { HiDocumentText } from 'react-icons/hi2';
 import type { MediaInfo } from '../types';
 import { LogViewer } from './LogViewer';
+import { supportsLosslessRotation, effectiveRotationMode } from '../lib/orientationQueue';
 
 function getOrientationDegrees(orientation: number | null): string | null {
   if (!orientation) return null;
@@ -77,10 +78,19 @@ export function ProcessingFlow({ media }: { media: MediaInfo }) {
     steps.push({ label: 'File Naming', status: 'error', details: 'Name generation failed' });
   }
 
-  const rotationMode =
-    media.rotation_mode ??
-    (media.exif_orientation && media.exif_orientation !== 1 ? 'exif' : 'none');
-  if (rotationMode !== 'none') {
+  // HEIC/HEIF/AVIF はロスレス回転に非対応で backend が回転を丸ごと skip するため
+  // （orientation::supports_lossless_rotation, #31）、rotation_mode の値によらず
+  // 「pending のまま」ではなく明示的に skip として表示する。判定は Rotate 列・After
+  // プレビューと同じ orientationQueue.ts の関数を再利用する。
+  const rotationSupported = supportsLosslessRotation(media);
+  const rotationMode = effectiveRotationMode(media);
+  if (!rotationSupported) {
+    steps.push({
+      label: 'Rotation',
+      status: 'skip',
+      details: 'Lossless rotation not supported for this format (HEIC/HEIF/AVIF)',
+    });
+  } else if (rotationMode !== 'none') {
     const degrees =
       rotationMode === 'exif' ? getOrientationDegrees(media.exif_orientation) : rotationMode;
     steps.push({

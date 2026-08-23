@@ -38,6 +38,10 @@ export interface MediaInfo {
   rotation_mode?: 'none' | 'exif' | '90' | '180' | '270';
   width: number | null;
   height: number | null;
+  // ロスレス回転に対応した拡張子かどうか（HEIC/HEIF/AVIF は false）。バックエンド
+  // （`orientation::supports_lossless_rotation`）がスキャン時に1回だけ計算する。拡張子の
+  // 対応リストは Rust 単独が正本で、フロントは文字列解析をせずこの値を読むだけにする（#31）。
+  supports_lossless_rotation: boolean;
   progress?: number; // 進捗（0-100）
   status?: 'pending' | 'processing' | 'completed' | 'error' | 'no_change';
   error_message?: string;

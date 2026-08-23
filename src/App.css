@@ -334,6 +334,13 @@
     0 0 0 1px rgba(180, 150, 80, 0.4);
 }
 
+/* 非対応形式（HEIC/HEIF/AVIF）の Rotate セレクタなど、機能自体が使えない状態（#31） */
+.selector-hardware:disabled {
+  background: linear-gradient(180deg, #161616 0%, #1a1a1a 40%, #1c1c1c 100%);
+  color: #555;
+  cursor: not-allowed;
+}
+
 /* ============================================================
    Checkbox — recessed LED window toggle (#28)
    ============================================================ */

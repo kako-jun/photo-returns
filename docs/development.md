@@ -70,7 +70,7 @@
 - EXIF 日付抽出
 - ファイルリネーム（YYYY-MM-DD_HH-MM-SS 形式）
 - ディレクトリ階層作成（YYYY/YYYY-MM/YYYY-MM-DD）
-- マルチフォーマット対応（画像10種、動画11種）
+- マルチフォーマット対応（画像11種、動画11種）
 - rayon による並列処理
 - 画像向き検出・修正
 - バースト写真検出（3秒以内に3枚以上）
@@ -184,7 +184,49 @@
   `e2e_exclude_system_artifacts_disabled_includes_trashed`（ゴミ混じりフィクスチャで
   scan→process の出力に混入しないこと・`ExcludedSummary` の件数を機械検証）
 
-### Phase 10: 由来タグ（#29）✅
+### Phase 10: HEIC/HEIF/AVIF 対応（#31）✅
+- `is_image_file` が `heic`/`heif`/`avif` を認識するようになった（従来はスキャン対象外で、
+  存在しなかったことになっていた）。EXIF 抽出は `kamadak-exif` の ISO BMFF パーサ
+  （`isobmff.rs`）が既に対応しており、追加依存なしで撮影日時・サブ秒・TZ・Orientation・
+  寸法を JPEG と同じ `get_exif_info` で取得できる。手組みの HEIC/HEIF/AVIF フィクスチャ
+  （`exif_info.rs` テスト、`build_heif_family_with_exif`）に加え、実機の HEIC でも実測済み:
+  kamadak-exif 同梱の `tests/exif.heic` と、iPhone 実機の HEIC 1837枚から均等抽出した307枚に
+  `get_exif_info` を実行し、iPhone 実機 HEIC は全件（307/307）で date/orientation/width/height
+  が読めることを確認した（個人写真のためコミットはできず、セルフレビュー時の一時検証コードで
+  確認・非コミット。#31 セルフレビュー S3）。kamadak-exif の isobmff パーサは `ftyp` の
+  major_brand は見ず compatible_brands の "mif1"/"msf1" だけで判定するため、HEIC/HEIF/AVIF で
+  EXIF 抽出ロジックに分岐はない
+- ロスレス回転は非対応（`image` crate 0.24 が HEIF をデコードできない）。
+  `orientation::supports_lossless_rotation(extension)` で事前に判定し、`image::open` を
+  呼んでエラーにする代わりに警告ログを残してスキップする。ミラー系 Orientation の
+  スキップと同じ粒度・同じ呼び出し箇所（`photo_core::mod` の回転処理）で判定し、この配線は
+  `tests/e2e_golden.rs` の `e2e_heic_rotation_is_skipped_with_log`（ミラー系スキップの
+  `e2e_mirror_orientation_is_skipped_with_log` と同型）で機械検証する
+- 拡張子ごとの対応可否は **Rust 単独が正本**。`MediaSource.supports_lossless_rotation`
+  としてスキャン時に1回だけ計算して JSON に載せ、フロントは文字列解析をせずこの値を読むだけ
+  にする（#31 セルフレビュー S2）。以前はフロント `orientationQueue.ts` 側でも拡張子文字列を
+  直接パースしており、2言語に正本が分かれるドリフトリスクがあった
+- フロント `lib/orientationQueue.ts` の `selectOrientationQueue` は `supportsLosslessRotation`
+  でも絞り込み、HEIC/HEIF/AVIF を方向確認ポップアップの対象から除外する（対象に出すと
+  人間が4方向を確定しても回転が適用されず「何も起きない」体験になるため）
+- Rotate 列・After プレビューも `supportsLosslessRotation` を参照する。`orientationQueue.ts`
+  の `effectiveRotationMode` / `rotationDisplayDegrees`（`useMediaTableColumns.tsx` と共通の
+  ソース、vitest 固定）が HEIC/HEIF/AVIF では常に `'none'` / 0° を返すため、Rotate 列は
+  既定値が「回転なし」になりドロップダウンは「NO ROTATE (FMT)」表示で disable、After
+  プレビューにも CSS 回転が乗らない。#31 のセルフレビューで発覚した穴（backend は
+  回転をスキップするのに UI は「EXIF (90°)」と表示・プレビューも回って見える不整合）を塞ぐ
+- サムネイル/ライトボックス/方向確認ポップアップ（Before・After 列・`LightBox.tsx`・
+  `OrientationConfirm.tsx` の4箇所）は、共通コンポーネント `ImageWithFallback.tsx` 経由で
+  `<img>` の decode エラーをプレースホルダへ差し替える。直接 DOM 操作
+  （`e.currentTarget.style.display = 'none'`）はせず、「失敗した src」を state に持つ設計に
+  することで、React の再レンダーで書き戻せず表示が残留するバグ（LightBox で Next/Prev した
+  ときにプレースホルダが消えない）を構造的に防ぐ（`src/lib/imageFallback.ts` の
+  `shouldShowFallback`、vitest 固定。#31 セルフレビュー M1/S4/S5。Linux WebKitGTK での
+  表示可否自体は未検証）
+- 新しい画像デコードライブラリ（libheif 等）は追加しない。ロスレス回転・トランスコードは
+  スコープ外（元ファイルをそのまま安全な場所へ移すツールという方針を維持）
+
+### Phase 11: 由来タグ（#29）✅
 - 複数ソース（Google Takeout / LINE 保存分 / 既存アーカイブ / 別端末）から写真を1つの
   ライブラリへ集約する際、現行の命名（`YYYY-MM-DD_HH-MM-SS[-mmm].ext` ＋ 日付階層）では
   「どこから来たファイルか」が失われる問題への対応。ファイル名自体に由来タグを残す
@@ -249,9 +291,12 @@
 2. **向き修正（ロスレス）**
    - EXIF orientation タグを読み取り
    - 値 1/3/6/8（回転）のみ対応。ミラー系 2/4/5/7 は非対応でスキップ＋ログ
+   - HEIC/HEIF/AVIF は `image` crate がデコードできないため形式単位で非対応。事前判定で
+     スキップ＋ログ（EXIF の日時・向き・寸法自体は読める。#31）
    - JPEG は turbojpeg(libjpeg-turbo) の DCT 領域変換で**無劣化**回転（EXIF/ICC を保持）。PNG 等は image クレート
    - **処理後にEXIF Orientation=1にリセット**（date/GPS は保持したまま二重回転を防ぐ）
-   - 実装: `orientation::rotate_file_in_place` / `exif_orientation_to_degrees` / `is_mirror_orientation`
+   - 実装: `orientation::rotate_file_in_place` / `exif_orientation_to_degrees` / `is_mirror_orientation` /
+     `supports_lossless_rotation`
 
 3. **並列処理**
    - rayon によるマルチスレッドスキャン/処理
@@ -356,7 +401,7 @@ output/
 - `ScrollToTopButton.tsx` - トップへスクロール
 
 **カスタムフック (src/hooks/):**
-- `useMediaTableColumns.tsx` (749行) - TanStack Table列定義
+- `useMediaTableColumns.tsx` (775行) - TanStack Table列定義
 
 **純粋ロジック (src/lib/):**
 - `processResults.ts` - 処理結果マージ・進捗・リトライ対象抽出（vitest 固定）
@@ -371,20 +416,20 @@ output/
 **コアファイル:**
 - `lib.rs` - Tauri コマンド定義（scan_media, process_media, process_media_with_settings, reveal_in_filemanager）。`process_media_with_settings` は `Channel<ProgressEvent>` でリアルタイム進捗を送る（#4）
 - `photo_core/` - コア処理ロジック（責務別モジュール）
-  - `mod.rs` (970行) - 公開型（MediaInfo / ProcessOptions / ProcessResult / MediaType / DateSource 等）とパイプライン（scan_media / process_media / process_media_with_list）。テストは `mod_tests.rs`（1087行）に分離（god-module 対策。パイプライン本体のさらなる分割は #12 で別途）
+  - `mod.rs` (997行) - 公開型（MediaInfo / ProcessOptions / ProcessResult / MediaType / DateSource 等）とパイプライン（scan_media / process_media / process_media_with_list）。テストは `mod_tests.rs`（1092行）に分離（god-module 対策。パイプライン本体のさらなる分割は #12 で別途）
     - メディアスキャン
     - ファイルリネーム
     - バースト統合
     - **画像回転処理**
     - **EXIF Orientation書き換え呼び出し**
     - **詳細ログ記録**
-  - `dating.rs` (167行) - ファイル名からの日付抽出 / ファイル作成・変更日時取得 / stem 生成の単一正本（`build_stem`。日付＋サブ秒＋バースト連番＋由来タグを組み立てる。#29）。テストは `dating_tests.rs`（336行）に分離
+  - `dating.rs` (173行) - ファイル名からの日付抽出 / ファイル作成・変更日時取得 / stem 生成の単一正本（`build_stem`。日付＋サブ秒＋バースト連番＋由来タグを組み立てる。#29）。テストは `dating_tests.rs`（347行）に分離
   - `exif_info.rs` - EXIF 抽出 / 画像・動画拡張子判定（モジュール名は exif クレートとの衝突回避のため exif_info）
   - `layout.rs` - 日付階層ディレクトリ作成 / バックアップ / unsorted ディレクトリ作成
   - `provenance.rs` (338行) - 由来タグのサニタイズ・解決（`sanitize_tag` / `parent_folder_name` / `resolve_tag_for_file`。#29）
   - 外部参照パス（`photo_core::scan_media` 等）は従来どおり有効
 - `burst.rs` (248行) - バースト検出アルゴリズム
-- `orientation.rs` (459行) - 画像向き処理
+- `orientation.rs` (492行) - 画像向き処理
   - EXIF orientation 読み取り
   - 画像回転
   - **reset_exif_orientation()関数**（EXIF書き換え）

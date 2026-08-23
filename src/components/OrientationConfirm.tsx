@@ -8,6 +8,7 @@ import {
   type OrientationDirection,
   type AbsoluteRotationMode,
 } from '../lib/orientationQueue';
+import { ImageWithFallback } from './ImageWithFallback';
 
 interface OrientationConfirmProps {
   /** 現在確認中の対象写真（mediaList から引き当て済み・rotation_mode は最新）。 */
@@ -173,7 +174,7 @@ export function OrientationConfirm({
               <HiPhoto className="h-24 w-24" style={{ color: '#333' }} />
             </div>
           ) : (
-            <img
+            <ImageWithFallback
               src={convertFileSrc(current.original_path)}
               alt={current.file_name}
               style={{
@@ -184,6 +185,17 @@ export function OrientationConfirm({
                 objectFit: 'contain',
                 display: 'block',
               }}
+              fallback={
+                <div className="flex h-full w-full flex-col items-center justify-center gap-2">
+                  <HiPhoto className="h-24 w-24" style={{ color: '#333' }} />
+                  <p
+                    className="led-display text-xs"
+                    style={{ color: '#aa6600', textShadow: '0 0 6px rgba(180,120,0,0.4)' }}
+                  >
+                    ◆ PREVIEW NOT AVAILABLE
+                  </p>
+                </div>
+              }
             />
           )}
         </div>

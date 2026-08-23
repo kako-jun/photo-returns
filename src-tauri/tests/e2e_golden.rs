@@ -241,6 +241,67 @@ fn e2e_mirror_orientation_is_skipped_with_log() {
 }
 
 // ---------------------------------------------------------------------------
+// #31: HEIC はロスレス回転非対応のため回転されず skip + ログ（配線の e2e 検証）
+// ---------------------------------------------------------------------------
+#[test]
+fn e2e_heic_rotation_is_skipped_with_log() {
+    let (input, output) = workspace("heic_rotate");
+
+    // supports_lossless_rotation は拡張子だけで判定するため、実際にデコード可能な HEIC を
+    // 組み立てる必要はない（EXIF 抽出自体は exif_info.rs のユニットテストで別途検証済み）。
+    // ここで確認したいのは「`supports_lossless_rotation` を呼んで回転をスキップし Warning
+    // ログを残す」実際の配線（photo_core::mod の process 処理）。
+    let path = input.join("IMG_20240115_103000.heic");
+    std::fs::write(
+        &path,
+        b"not a real HEIC container; only the extension matters here",
+    )
+    .unwrap();
+
+    let mut media = scan_media(&input, &opts()).unwrap().media;
+    assert_eq!(
+        media.len(),
+        1,
+        "HEIC も Photo としてスキャンされるはず（#31）"
+    );
+    assert!(
+        !media[0].source.supports_lossless_rotation,
+        "HEIC は MediaSource.supports_lossless_rotation=false のはず"
+    );
+
+    // EXIF に依存しない絶対角指定で回転を要求する（EXIF が読めない前提のフィクスチャのため）。
+    media[0].overrides.rotation_mode = Some("90".to_string());
+    let result = process_media_with_list(&mut media, &output, &opts()).unwrap();
+    assert_eq!(result.processed_files, 1);
+
+    let out = output
+        .join("2024")
+        .join("2024-01")
+        .join("2024-01-15")
+        .join("2024-01-15_10-30-00.heic");
+    assert!(out.exists(), "出力ファイルが存在するはず: {out:?}");
+
+    // 回転は実際にスキップされる: image crate が HEIC をデコードできないため
+    // rotate_file_in_place へは流れず、コピーされたバイト列は不変のはず。
+    let original_bytes = std::fs::read(&path).unwrap();
+    let output_bytes = std::fs::read(&out).unwrap();
+    assert_eq!(
+        original_bytes, output_bytes,
+        "HEIC は回転スキップなのでバイト列は変化しないはず"
+    );
+    assert!(
+        !result.media[0].derived.rotation_applied,
+        "rotation_applied は false のままのはず"
+    );
+
+    let logged = result.media[0]
+        .logs
+        .iter()
+        .any(|l| l.message.contains("Lossless rotation is not supported"));
+    assert!(logged, "ロスレス回転非対応の skip ログが残るはず");
+}
+
+// ---------------------------------------------------------------------------
 // #6: リトライ相当＝渡したサブセットのみ処理し、対象外は出力されない
 // ---------------------------------------------------------------------------
 #[test]

@@ -27,6 +27,23 @@ export function isMirrorOrientation(orientation: number | null): boolean {
 }
 
 /**
+ * 拡張子がロスレス回転に対応しているかどうか。
+ * HEIC/HEIF/AVIF は EXIF は読めるが `image` crate がデコードできず backend がロスレス回転を
+ * skip する（Rust 側 `orientation::supports_lossless_rotation` と同じ判定、#31）。
+ * iPhone の HEIC は Orientation≠1 が大量にあるため、除外しないと「人間が4方向で確定したのに
+ * 何も起きない」という体験になる。
+ *
+ * 拡張子の対応リストは Rust 単独を正本とし（スキャン時に `MediaSource.supports_lossless_rotation`
+ * として1回だけ計算される）、ここでは文字列解析をせずその値を読むだけにする。2言語に正本が
+ * 分かれるドリフトを避けるため（#31 セルフレビュー S2。#5 の `timezone_offset` 型不一致と同根）。
+ */
+export function supportsLosslessRotation(
+  media: Pick<MediaInfo, 'supports_lossless_rotation'>
+): boolean {
+  return media.supports_lossless_rotation;
+}
+
+/**
  * EXIF Orientation → 生ピクセルを正立させるための CW（時計回り）回転角。
  * 非ミラーの回転系のみ対応: 3→180, 6→90, 8→270。1 を含むそれ以外は 0。
  * useMediaTableColumns / backend の写像と一致させる。
@@ -44,9 +61,59 @@ export function exifDegrees(orientation: number | null): number {
   }
 }
 
+/** Rotate 列が扱う rotation_mode の全体（絶対角 + EXIF 追従の 'exif'）。 */
+export type RotationMode = AbsoluteRotationMode | 'exif';
+
+/**
+ * Rotate 列に出す実効 rotation_mode（useMediaTableColumns の Rotate 列・After プレビュー共通ソース）。
+ *
+ * ロスレス回転に非対応の形式（HEIC/HEIF/AVIF）は、明示選択の有無に関わらず常に 'none' を返す。
+ * backend はこれらの形式では `orientation::supports_lossless_rotation` の事前判定で回転を
+ * 丸ごと skip するため（`ceaeb92`, #31）、UI 側の既定値・選択結果も「回転しない」実態に
+ * 合わせないと、「EXIF (90°) と表示・プレビューも回って見えるのに実際は回らない」という
+ * サイレント不整合が起きる（#31 で自己申告された穴）。
+ *
+ * 対応形式では従来どおり: 明示選択（media.rotation_mode）があればそれを、なければ
+ * EXIF Orientation≠1 の時だけ 'exif' を既定にする。
+ */
+export function effectiveRotationMode(
+  media: Pick<MediaInfo, 'rotation_mode' | 'exif_orientation' | 'supports_lossless_rotation'>
+): RotationMode {
+  if (!supportsLosslessRotation(media)) return 'none';
+  return (
+    media.rotation_mode ??
+    (media.exif_orientation && media.exif_orientation !== 1 ? 'exif' : 'none')
+  );
+}
+
+/**
+ * After プレビューに当てる CSS 回転角（度）。
+ * effectiveRotationMode の結果を実角度へ写す。ロスレス回転非対応の形式は
+ * effectiveRotationMode が常に 'none' を返す設計のため、ここでも常に 0 になり
+ * プレビューは回らない（回さない実態と一致、#31）。
+ */
+export function rotationDisplayDegrees(
+  media: Pick<MediaInfo, 'rotation_mode' | 'exif_orientation' | 'supports_lossless_rotation'>
+): number {
+  switch (effectiveRotationMode(media)) {
+    case 'exif':
+      return exifDegrees(media.exif_orientation);
+    case '90':
+      return 90;
+    case '180':
+      return 180;
+    case '270':
+      return 270;
+    case 'none':
+    default:
+      return 0;
+  }
+}
+
 /**
  * ポップアップで人間に確認させる対象を抽出する。
- * 条件 = 写真 かつ EXIF Orientation≠1（=回転の疑いがある）かつ 非ミラー。
+ * 条件 = 写真 かつ EXIF Orientation≠1（=回転の疑いがある）かつ 非ミラー かつ
+ * ロスレス回転に対応した形式（HEIC/HEIF/AVIF は backend が回転を skip するため対象外、#31）。
  * EXIF=1（直立扱い）は取りこぼしの受け皿として既存の手動 dropdown に任せる（仕様）。
  * 動画はロスレス画素回転ができないため対象外（別 issue follow-up）。
  */
@@ -56,7 +123,8 @@ export function selectOrientationQueue(media: MediaInfo[]): MediaInfo[] {
       m.media_type === 'Photo' &&
       m.exif_orientation !== null &&
       m.exif_orientation !== 1 &&
-      !isMirrorOrientation(m.exif_orientation)
+      !isMirrorOrientation(m.exif_orientation) &&
+      supportsLosslessRotation(m)
   );
 }
 

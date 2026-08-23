@@ -28,6 +28,7 @@ export const mockMediaList: MediaInfo[] = [
     rotation_mode: 'none', // 回転なし
     width: 4032,
     height: 3024,
+    supports_lossless_rotation: true,
     progress: 0,
     status: 'pending',
     logs: [],
@@ -56,6 +57,7 @@ export const mockMediaList: MediaInfo[] = [
     rotation_mode: 'exif', // EXIF orientationを使用
     width: 3024,
     height: 4032,
+    supports_lossless_rotation: true,
     progress: 100,
     status: 'completed',
     logs: [
@@ -100,6 +102,7 @@ export const mockMediaList: MediaInfo[] = [
     rotation_mode: 'none',
     width: 4032,
     height: 3024,
+    supports_lossless_rotation: true,
     progress: 100,
     status: 'completed',
     logs: [
@@ -144,6 +147,7 @@ export const mockMediaList: MediaInfo[] = [
     rotation_mode: '90', // 手動で90度回転
     width: 4000,
     height: 3000,
+    supports_lossless_rotation: true,
     progress: 75,
     status: 'processing',
     logs: [
@@ -183,6 +187,7 @@ export const mockMediaList: MediaInfo[] = [
     rotation_mode: 'none',
     width: 3840,
     height: 2160,
+    supports_lossless_rotation: true,
     progress: 100,
     status: 'completed',
     logs: [
@@ -227,6 +232,7 @@ export const mockMediaList: MediaInfo[] = [
     rotation_mode: 'none',
     width: 1920,
     height: 1080,
+    supports_lossless_rotation: true,
     progress: 50,
     status: 'processing',
     logs: [
@@ -271,6 +277,7 @@ export const mockMediaList: MediaInfo[] = [
     rotation_mode: 'none',
     width: 2048,
     height: 2048,
+    supports_lossless_rotation: true,
     progress: 100,
     status: 'completed',
     logs: [
@@ -315,6 +322,7 @@ export const mockMediaList: MediaInfo[] = [
     rotation_mode: 'none',
     width: null,
     height: null,
+    supports_lossless_rotation: true,
     progress: 0,
     status: 'error',
     logs: [
