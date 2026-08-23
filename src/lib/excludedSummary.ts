@@ -41,3 +41,24 @@ export function excludedSummaryToLogEntries(summary: ExcludedSummary): LogEntry[
 
   return [...ruleEntries, ...sampleEntries];
 }
+
+/**
+ * 除外内訳を `LogViewer` に表示するときのフッター文言（#28）。
+ *
+ * `excludedSummaryToLogEntries` が返す `LogEntry[]` は `by_rule`（最大5行）＋
+ * `samples`（最大20行）を連結したものなので、その `length` を件数として表示すると
+ * 除外が20件を超えたとき（例: Android の `.thumbnails` キャッシュ）に、直前に見た
+ * 「EXCLUDED: N」バッジの数と食い違う。ここでは `ExcludedSummary` の `total`/`samples`
+ * から直接、既存 UI 文言の流儀（英大文字・モノスペース）に合わせた文言を組み立てる。
+ */
+export function excludedSummaryFooterText(summary: ExcludedSummary): string {
+  const { total, samples } = summary;
+  const unit = total === 1 ? 'FILE' : 'FILES';
+
+  // samples は先頭 MAX_SAMPLES(20) 件で頭打ちになるため、20件以下（=全件サンプルに載っている）
+  // ときは "SHOWING N OF N" という不自然な文言を避け、全件表示であることを明示する。
+  if (samples.length >= total) {
+    return `SHOWING ALL ${total} EXCLUDED ${unit}`;
+  }
+  return `SHOWING ${samples.length} OF ${total} EXCLUDED ${unit}`;
+}

@@ -12,7 +12,7 @@ import { LogViewer } from './LogViewer';
 import { DirectorySelection } from './DirectorySelection';
 import { DefaultSettings } from './DefaultSettings';
 import { progressPercent } from '../lib/processResults';
-import { excludedSummaryToLogEntries } from '../lib/excludedSummary';
+import { excludedSummaryToLogEntries, excludedSummaryFooterText } from '../lib/excludedSummary';
 
 interface MainLayoutProps {
   isDark: boolean;
@@ -420,6 +420,7 @@ export function MainLayout({
           logs={excludedSummaryToLogEntries(excludedSummary)}
           fileName="EXCLUDED SYSTEM ARTIFACTS"
           onClose={() => setShowExcludedDetail(false)}
+          footerText={excludedSummaryFooterText(excludedSummary)}
         />
       )}
     </div>

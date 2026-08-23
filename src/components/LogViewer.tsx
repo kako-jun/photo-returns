@@ -6,9 +6,15 @@ interface LogViewerProps {
   logs: LogEntry[];
   fileName: string;
   onClose: () => void;
+  /**
+   * フッターの表示テキストを差し替える（#28）。省略時は従来どおり
+   * `TOTAL: {logs.length} ENTRIES` を表示する（ファイル単位ログ表示の既定挙動は不変）。
+   * 除外内訳表示のように `logs.length` が実際の件数と一致しない呼び出し元向け。
+   */
+  footerText?: string;
 }
 
-export function LogViewer({ logs, fileName, onClose }: LogViewerProps) {
+export function LogViewer({ logs, fileName, onClose, footerText }: LogViewerProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -178,7 +184,7 @@ export function LogViewer({ logs, fileName, onClose }: LogViewerProps) {
             className="led-display text-center text-xs"
             style={{ color: '#444', letterSpacing: '0.1em' }}
           >
-            TOTAL: {logs.length} {logs.length === 1 ? 'ENTRY' : 'ENTRIES'}
+            {footerText ?? `TOTAL: ${logs.length} ${logs.length === 1 ? 'ENTRY' : 'ENTRIES'}`}
           </p>
         </div>
       </div>
