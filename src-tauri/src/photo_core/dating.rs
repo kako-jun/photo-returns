@@ -411,9 +411,23 @@ mod tests {
 
     #[test]
     fn build_stem_no_date_ignores_burst_index() {
-        // 日付なしのファイルはバースト検出の対象外のため、burst_index を渡しても無視される
-        // …という契約ではなく、呼び出し側が None しか渡さない前提。ここでは実装の素直な
-        // 挙動（date=None のときも burst_index があれば付与される）を pin しておく。
+        // 日付なしのファイルに burst_index を渡しても素通しで付与される（date=None は
+        // burst_index を無視/拒否しない）。`build_stem` はフィールド間の整合性を検証しない
+        // 低レベルな純粋フォーマッタとして意図的にこの形にしてある——「契約」に格上げ
+        // （＝date=None のとき burst_index を拒否/無視する）はしない。
+        //
+        // date=None かつ burst_index=Some の組み合わせは、現在の呼び出し側3箇所では
+        // 構造的に到達不能:
+        //   - `scan_media` 初期構築（mod.rs）: date=None の分岐では burst_index を渡していない
+        //   - `scan_media` バースト反映ループ（mod.rs）: `if let Some(date) = ...` の中でしか
+        //     `build_stem` を呼ばない
+        //   - `apply_timezone_correction`（mod.rs）: 冒頭で `let Some(date) = ... else { return }`
+        //   - `process_media_inner` 衝突ループ（mod.rs）: burst_index はそもそも scan 時に
+        //     date=Some の写真にしか付与されない（`burst::detect_burst_groups` が
+        //     `dates` の `None` 要素をどの `BurstGroup.photo_indices` にも含めないことは
+        //     `burst::tests::none_dated_entries_are_never_included_in_any_group` で保証済み）
+        // ここでは「実装のなりゆき」を正直に pin したまま、その安全性の根拠を上記の
+        // 統合的な保証（burst.rs のテスト）に委ねる、という判断にした。
         assert_eq!(
             build_stem(None, None, Some(1), "IMG_1234", None),
             "IMG_1234_01"
