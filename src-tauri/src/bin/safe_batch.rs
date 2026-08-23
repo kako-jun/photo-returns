@@ -40,7 +40,9 @@ fn skip_reason(item: &MediaInfo) -> Option<&'static str> {
         return Some("burst_or_derived_frame");
     }
     match item.source.media_type {
-        MediaType::Photo if item.dates.date_source != DateSource::Exif => Some("photo_without_exif"),
+        MediaType::Photo if item.dates.date_source != DateSource::Exif => {
+            Some("photo_without_exif")
+        }
         MediaType::Video if item.dates.date_source != DateSource::QuickTime => {
             Some("video_without_quicktime")
         }
