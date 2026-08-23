@@ -340,23 +340,23 @@ output/
 ### フロントエンド (src/)
 
 **メインファイル:**
-- `App.tsx` (297行) - ビジネスロジックのみ（state管理、関数定義）
+- `App.tsx` (559行) - ビジネスロジックのみ（state管理、関数定義）
 - `App.css` - Tailwind CSS ディレクティブ
 
 **コンポーネント (src/components/):**
-- `MainLayout.tsx` (248行) - レイアウト・プレゼンテーション層
+- `MainLayout.tsx` (442行) - レイアウト・プレゼンテーション層
 - `DirectorySelection.tsx` - ディレクトリ選択UI
 - `DefaultSettings.tsx` - デフォルト設定パネル
 - `ProcessingFlow.tsx` (255行) - 処理フロー詳細表示（9ステップ）
 - `ProcessSummary.tsx` - 処理結果サマリー + Retryボタン
-- `LogViewer.tsx` (135行) - ログ表示モーダル
+- `LogViewer.tsx` (193行) - ログ表示モーダル
 - `LightBox.tsx` - 画像ライトボックス
 - `OrientationConfirm.tsx` - 方向確認ポップアップ（眼科Cの4方向ピッカー・#7 Phase C）
 - `Header.tsx` / `Footer.tsx` - ヘッダー/フッター
 - `ScrollToTopButton.tsx` - トップへスクロール
 
 **カスタムフック (src/hooks/):**
-- `useMediaTableColumns.tsx` (600+行) - TanStack Table列定義
+- `useMediaTableColumns.tsx` (749行) - TanStack Table列定義
 
 **純粋ロジック (src/lib/):**
 - `processResults.ts` - 処理結果マージ・進捗・リトライ対象抽出（vitest 固定）
@@ -371,20 +371,20 @@ output/
 **コアファイル:**
 - `lib.rs` - Tauri コマンド定義（scan_media, process_media, process_media_with_settings, reveal_in_filemanager）。`process_media_with_settings` は `Channel<ProgressEvent>` でリアルタイム進捗を送る（#4）
 - `photo_core/` - コア処理ロジック（責務別モジュール）
-  - `mod.rs` - 公開型（MediaInfo / ProcessOptions / ProcessResult / MediaType / DateSource 等）とパイプライン（scan_media / process_media / process_media_with_list）
+  - `mod.rs` (970行) - 公開型（MediaInfo / ProcessOptions / ProcessResult / MediaType / DateSource 等）とパイプライン（scan_media / process_media / process_media_with_list）。テストは `mod_tests.rs`（1087行）に分離（god-module 対策。パイプライン本体のさらなる分割は #12 で別途）
     - メディアスキャン
     - ファイルリネーム
     - バースト統合
     - **画像回転処理**
     - **EXIF Orientation書き換え呼び出し**
     - **詳細ログ記録**
-  - `dating.rs` - ファイル名からの日付抽出 / ファイル作成・変更日時取得 / stem 生成の単一正本（`build_stem`。日付＋サブ秒＋バースト連番＋由来タグを組み立てる。#29）
+  - `dating.rs` (167行) - ファイル名からの日付抽出 / ファイル作成・変更日時取得 / stem 生成の単一正本（`build_stem`。日付＋サブ秒＋バースト連番＋由来タグを組み立てる。#29）。テストは `dating_tests.rs`（336行）に分離
   - `exif_info.rs` - EXIF 抽出 / 画像・動画拡張子判定（モジュール名は exif クレートとの衝突回避のため exif_info）
   - `layout.rs` - 日付階層ディレクトリ作成 / バックアップ / unsorted ディレクトリ作成
-  - `provenance.rs` - 由来タグのサニタイズ・解決（`sanitize_tag` / `parent_folder_name` / `resolve_tag_for_file`。#29）
+  - `provenance.rs` (338行) - 由来タグのサニタイズ・解決（`sanitize_tag` / `parent_folder_name` / `resolve_tag_for_file`。#29）
   - 外部参照パス（`photo_core::scan_media` 等）は従来どおり有効
-- `burst.rs` (213行) - バースト検出アルゴリズム
-- `orientation.rs` (220+行) - 画像向き処理
+- `burst.rs` (248行) - バースト検出アルゴリズム
+- `orientation.rs` (459行) - 画像向き処理
   - EXIF orientation 読み取り
   - 画像回転
   - **reset_exif_orientation()関数**（EXIF書き換え）
