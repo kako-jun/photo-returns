@@ -67,6 +67,9 @@ fn is_replaced_char(ch: char) -> bool {
 /// 全角数字（`０`〜`９`等）も対象に含める。半角と紛らわしく `_01` に読み違えられるため、
 /// 文字種は ASCII に絞らず `char::is_numeric()` で判定する。バイト長では全角1文字が
 /// 3バイトになり誤判定するため、`chars().count()` で文字数として2桁を数える。
+/// 注: `char::is_numeric()` は10進数字より広い（Unicode の `Nl`/`No` カテゴリも含み、
+/// 例えばローマ数字 `Ⅷ` も真になる）。ここでは意図的に広めに取っている——数字紛いの
+/// 2文字を誤ってタグとして通してしまう方が、稀な非10進数字を弾きすぎるより実害が大きいため。
 fn is_pure_two_digit(s: &str) -> bool {
     s.chars().count() == 2 && s.chars().all(char::is_numeric)
 }
