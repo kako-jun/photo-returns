@@ -1904,4 +1904,151 @@ mod tests {
 
         let _ = fs::remove_dir_all(&tmp);
     }
+    // ---- #29 統合・配線: scan_media の境界での由来タグ検証 ----
+
+    #[test]
+    fn scan_media_rejects_explicit_two_digit_provenance_tag() {
+        // #14: sanitize_tag 単体ではなく scan_media の境界で Err が返ることを確認する。
+        let base = std::env::temp_dir().join(format!(
+            "photo_returns_scan_explicit_tag_rejected_test_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+
+        let options = ProcessOptions {
+            parallel: false,
+            provenance_tag: Some("01".to_string()),
+            ..Default::default()
+        };
+        let result = scan_media(&base, &options);
+        assert!(
+            result.is_err(),
+            "明示ラベルが2桁純数字のときは scan_media がエラーを返すはず"
+        );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn scan_media_rejected_folder_tag_logs_warning_on_media_info() {
+        // #15: フォルダ由来タグがサニタイズで拒否されたとき、純粋関数の戻り値だけでなく
+        // 配線側（scan_media）が実際に info.logs へ警告を積むことを確認する。
+        let base = std::env::temp_dir().join(format!(
+            "photo_returns_scan_folder_tag_rejected_test_{}",
+            std::process::id()
+        ));
+        let sub = base.join("01");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&sub).unwrap();
+        fs::write(sub.join("IMG.jpg"), b"x").unwrap();
+
+        let options = ProcessOptions {
+            parallel: false,
+            provenance_from_folder: true,
+            ..Default::default()
+        };
+        let outcome = scan_media(&base, &options).unwrap();
+        assert_eq!(outcome.media.len(), 1);
+        assert_eq!(
+            outcome.media[0].derived.resolved_provenance_tag, None,
+            "2桁数字の親フォルダ名はサニタイズ拒否でタグなしになるはず"
+        );
+        let warned = outcome.media[0]
+            .logs
+            .iter()
+            .any(|l| l.level == LogLevel::Warning && l.message.contains("01"));
+        assert!(
+            warned,
+            "サニタイズ拒否時は info.logs に警告が積まれるはず（配線側の確認）: {:?}",
+            outcome.media[0].logs
+        );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn scan_media_input_dir_without_file_name_component_silently_has_no_tag() {
+        // #16: input_dir のパス表現の最後の要素が ".." の場合 `Path::file_name()` は
+        // None を返す（実ファイルシステム上は正常に親ディレクトリを指す）。このとき
+        // 「入力ディレクトリ自身の名前」フォールバックの候補すら得られないため、
+        // フォルダ由来タグは警告なしで静かにタグなしになるはず。
+        let base = std::env::temp_dir().join(format!(
+            "photo_returns_scan_no_filename_component_test_{}",
+            std::process::id()
+        ));
+        let sub = base.join("sub");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&sub).unwrap();
+        // ファイルは base 直下（sub の中ではない）に置く: 相対パスの親が空 →
+        // parent_folder_name も None になる。
+        fs::write(base.join("IMG.jpg"), b"x").unwrap();
+
+        // sub/.. は正規化前の文字列としては file_name() = None だが、実体としては base を指す。
+        let input_dir = sub.join("..");
+
+        let options = ProcessOptions {
+            parallel: false,
+            provenance_from_folder: true,
+            ..Default::default()
+        };
+        let outcome = scan_media(&input_dir, &options).unwrap();
+        assert_eq!(outcome.media.len(), 1);
+        assert_eq!(
+            outcome.media[0].derived.resolved_provenance_tag, None,
+            "file_name() が取れない入力ディレクトリはタグなしになるはず"
+        );
+        assert!(
+            outcome.media[0].logs.is_empty(),
+            "候補が無い場合は警告ログも残らないはず（サニタイズ拒否の警告経路とは違う）: {:?}",
+            outcome.media[0].logs
+        );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn scan_media_different_tags_do_not_collide_same_tag_does() {
+        // #17（scan_media 経由）: フォルダ由来タグが異なれば、同時刻でも new_name が
+        // 別々になる。scan 時点では衝突連番はまだ付かない（付くのは process 時）ので、
+        // ここでは new_name 自体が別文字列であることを確認する。
+        let base = std::env::temp_dir().join(format!(
+            "photo_returns_scan_tag_scope_test_{}",
+            std::process::id()
+        ));
+        let takeout_dir = base.join("takeout");
+        let line_dir = base.join("line");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&takeout_dir).unwrap();
+        fs::create_dir_all(&line_dir).unwrap();
+        write_dummy_jpeg(&takeout_dir.join("IMG_20240115_103000.jpg"));
+        write_dummy_jpeg(&line_dir.join("IMG_20240115_103000.jpg"));
+
+        let options = ProcessOptions {
+            parallel: false,
+            provenance_from_folder: true,
+            ..Default::default()
+        };
+        let outcome = scan_media(&base, &options).unwrap();
+        assert_eq!(outcome.media.len(), 2);
+
+        let names: Vec<&str> = outcome
+            .media
+            .iter()
+            .map(|m| m.derived.new_name.as_str())
+            .collect();
+        assert!(names.contains(&"2024-01-15_10-30-00_takeout.jpg"));
+        assert!(names.contains(&"2024-01-15_10-30-00_line.jpg"));
+        assert_ne!(
+            names[0], names[1],
+            "異なるフォルダ由来タグは同時刻でも別名になるはず"
+        );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// 中身が空でも拡張子だけで media 判定される最小ダミーファイルを書く。
+    fn write_dummy_jpeg(path: &Path) {
+        fs::write(path, b"x").unwrap();
+    }
 }
