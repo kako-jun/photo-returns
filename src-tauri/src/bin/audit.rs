@@ -42,12 +42,13 @@ fn main() {
         timezone_offset: None,
         cleanup_temp: false,
         auto_correct_orientation: false,
+        exclude_system_artifacts: true,
     };
 
     for input in args.iter().skip(1) {
         let input_dir = PathBuf::from(input);
         let media = match photo_core::scan_media(&input_dir, &options) {
-            Ok(media) => media,
+            Ok(outcome) => outcome.media,
             Err(err) => {
                 eprintln!("scan failed for {}: {err}", input_dir.display());
                 continue;
