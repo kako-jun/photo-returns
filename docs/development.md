@@ -196,6 +196,12 @@
 - フロント `lib/orientationQueue.ts` の `selectOrientationQueue` は `supportsLosslessRotation`
   でも絞り込み、HEIC/HEIF/AVIF を方向確認ポップアップの対象から除外する（対象に出すと
   人間が4方向を確定しても回転が適用されず「何も起きない」体験になるため）
+- Rotate 列・After プレビューも `supportsLosslessRotation` を参照する。`orientationQueue.ts`
+  の `effectiveRotationMode` / `rotationDisplayDegrees`（`useMediaTableColumns.tsx` と共通の
+  ソース、vitest 固定）が HEIC/HEIF/AVIF では常に `'none'` / 0° を返すため、Rotate 列は
+  既定値が「回転なし」になりドロップダウンは「NO ROTATE (FMT)」表示で disable、After
+  プレビューにも CSS 回転が乗らない。#31 のセルフレビューで発覚した穴（backend は
+  回転をスキップするのに UI は「EXIF (90°)」と表示・プレビューも回って見える不整合）を塞ぐ
 - サムネイル/ライトボックス（`useMediaTableColumns.tsx` / `LightBox.tsx`）は `<img>` に
   `onError` を追加し、webview がデコードできない場合はレイアウトを崩さず拡張子名の
   プレースホルダに切り替える（Linux WebKitGTK での表示可否は未検証）
