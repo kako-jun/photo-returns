@@ -146,6 +146,10 @@ ON/OFFで結果を左右せず、「システムが何を捨てたか」を見�
 
 ### CLI
 
+Rust バックエンドのテスト用 CLI（`src-tauri/src/bin/cli.rs`、開発者向け）でも由来タグを
+指定できる。対話形式に対応した一般ユーザー向けの「CLIモード」は今後の展望
+（`docs/roadmap.md`「CLIモード」参照）。
+
 ```
 cli <input_dir> <output_dir> --tag takeout            # 明示ラベル
 cli <input_dir> <output_dir> --tag-from-folder         # フォルダ由来フォールバック
