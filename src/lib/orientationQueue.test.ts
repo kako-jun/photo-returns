@@ -4,6 +4,8 @@ import {
   isMirrorOrientation,
   supportsLosslessRotation,
   exifDegrees,
+  effectiveRotationMode,
+  rotationDisplayDegrees,
   selectOrientationQueue,
   directionDelta,
   resolveRotationMode,
@@ -77,6 +79,57 @@ describe('exifDegrees', () => {
     expect(exifDegrees(2)).toBe(0);
     expect(exifDegrees(5)).toBe(0);
     expect(exifDegrees(null)).toBe(0);
+  });
+});
+
+describe('effectiveRotationMode', () => {
+  it('非対応形式（HEIC/HEIF/AVIF）は明示選択があっても常に none（#31）', () => {
+    expect(effectiveRotationMode(media('/a.heic', { exif_orientation: 6 }))).toBe('none');
+    expect(
+      effectiveRotationMode(media('/a.HEIF', { exif_orientation: 3, rotation_mode: '180' }))
+    ).toBe('none');
+    expect(
+      effectiveRotationMode(media('/a.avif', { rotation_mode: 'exif', exif_orientation: 8 }))
+    ).toBe('none');
+  });
+
+  it('対応形式で明示選択があればそれを優先する', () => {
+    expect(
+      effectiveRotationMode(media('/a.jpg', { rotation_mode: '90', exif_orientation: 6 }))
+    ).toBe('90');
+    expect(
+      effectiveRotationMode(media('/a.jpg', { rotation_mode: 'none', exif_orientation: 6 }))
+    ).toBe('none');
+  });
+
+  it('対応形式で明示選択がなければ EXIF Orientation≠1 の時だけ exif を既定にする', () => {
+    expect(effectiveRotationMode(media('/a.jpg', { exif_orientation: 6 }))).toBe('exif');
+    expect(effectiveRotationMode(media('/a.jpg', { exif_orientation: 1 }))).toBe('none');
+    expect(effectiveRotationMode(media('/a.jpg', { exif_orientation: null }))).toBe('none');
+  });
+});
+
+describe('rotationDisplayDegrees', () => {
+  it('非対応形式は rotation_mode を明示していても常に 0（回して見せない、#31）', () => {
+    expect(rotationDisplayDegrees(media('/a.heic', { exif_orientation: 6 }))).toBe(0);
+    expect(
+      rotationDisplayDegrees(media('/a.heic', { exif_orientation: 6, rotation_mode: '90' }))
+    ).toBe(0);
+  });
+
+  it('exif モードは EXIF Orientation から角度を導く', () => {
+    expect(rotationDisplayDegrees(media('/a.jpg', { exif_orientation: 6 }))).toBe(90);
+    expect(rotationDisplayDegrees(media('/a.jpg', { exif_orientation: 3 }))).toBe(180);
+    expect(rotationDisplayDegrees(media('/a.jpg', { exif_orientation: 8 }))).toBe(270);
+  });
+
+  it('絶対角の明示選択はそのまま角度になる、none は 0', () => {
+    expect(rotationDisplayDegrees(media('/a.jpg', { rotation_mode: '90' }))).toBe(90);
+    expect(rotationDisplayDegrees(media('/a.jpg', { rotation_mode: '180' }))).toBe(180);
+    expect(rotationDisplayDegrees(media('/a.jpg', { rotation_mode: '270' }))).toBe(270);
+    expect(
+      rotationDisplayDegrees(media('/a.jpg', { rotation_mode: 'none', exif_orientation: 6 }))
+    ).toBe(0);
   });
 });
 

@@ -56,6 +56,55 @@ export function exifDegrees(orientation: number | null): number {
   }
 }
 
+/** Rotate 列が扱う rotation_mode の全体（絶対角 + EXIF 追従の 'exif'）。 */
+export type RotationMode = AbsoluteRotationMode | 'exif';
+
+/**
+ * Rotate 列に出す実効 rotation_mode（useMediaTableColumns の Rotate 列・After プレビュー共通ソース）。
+ *
+ * ロスレス回転に非対応の形式（HEIC/HEIF/AVIF）は、明示選択の有無に関わらず常に 'none' を返す。
+ * backend はこれらの形式では `orientation::supports_lossless_rotation` の事前判定で回転を
+ * 丸ごと skip するため（`ceaeb92`, #31）、UI 側の既定値・選択結果も「回転しない」実態に
+ * 合わせないと、「EXIF (90°) と表示・プレビューも回って見えるのに実際は回らない」という
+ * サイレント不整合が起きる（#31 で自己申告された穴）。
+ *
+ * 対応形式では従来どおり: 明示選択（media.rotation_mode）があればそれを、なければ
+ * EXIF Orientation≠1 の時だけ 'exif' を既定にする。
+ */
+export function effectiveRotationMode(
+  media: Pick<MediaInfo, 'rotation_mode' | 'exif_orientation' | 'original_path'>
+): RotationMode {
+  if (!supportsLosslessRotation(media.original_path)) return 'none';
+  return (
+    media.rotation_mode ??
+    (media.exif_orientation && media.exif_orientation !== 1 ? 'exif' : 'none')
+  );
+}
+
+/**
+ * After プレビューに当てる CSS 回転角（度）。
+ * effectiveRotationMode の結果を実角度へ写す。ロスレス回転非対応の形式は
+ * effectiveRotationMode が常に 'none' を返す設計のため、ここでも常に 0 になり
+ * プレビューは回らない（回さない実態と一致、#31）。
+ */
+export function rotationDisplayDegrees(
+  media: Pick<MediaInfo, 'rotation_mode' | 'exif_orientation' | 'original_path'>
+): number {
+  switch (effectiveRotationMode(media)) {
+    case 'exif':
+      return exifDegrees(media.exif_orientation);
+    case '90':
+      return 90;
+    case '180':
+      return 180;
+    case '270':
+      return 270;
+    case 'none':
+    default:
+      return 0;
+  }
+}
+
 /**
  * ポップアップで人間に確認させる対象を抽出する。
  * 条件 = 写真 かつ EXIF Orientation≠1（=回転の疑いがある）かつ 非ミラー かつ
