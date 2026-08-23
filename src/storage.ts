@@ -12,6 +12,10 @@ export interface StorageData {
   outputDir?: string;
   // システム生成物の除外トグル（#28）。既定 true。
   excludeSystemArtifacts?: boolean;
+  // 由来タグの明示ラベル（#29）。既定は未設定（空文字扱い＝タグなし）。
+  provenanceTag?: string;
+  // ラベル未指定時にフォルダ名へフォールバックするか（#29）。既定 false。
+  provenanceFromFolder?: boolean;
 }
 
 /** localStorage から全データを読み込む */

@@ -26,6 +26,9 @@ export interface MediaInfo {
   file_size: number;
   burst_group_id: number | null;
   burst_index: number | null;
+  // scan 時に解決された由来タグ（#29）。明示ラベル、またはフォルダ名フォールバックから
+  // サニタイズ済みで決まった最終値。new_name に反映済み。付いていなければ null。
+  resolved_provenance_tag: string | null;
   date_source: 'Exif' | 'QuickTime' | 'FileName' | 'FileCreated' | 'FileModified' | 'None';
   exif_orientation: number | null;
   rotation_applied: boolean;

@@ -36,6 +36,12 @@ interface MainLayoutProps {
   /** システム生成物を scan_media で除外するかどうか（#28）。既定 true。 */
   excludeSystemArtifacts: boolean;
   onExcludeSystemArtifactsChange: (value: boolean) => void;
+  /** 由来タグの明示ラベル（#29）。空文字ならタグなし（フォルダ由来フォールバック次第）。 */
+  provenanceTag: string;
+  onProvenanceTagChange: (value: string) => void;
+  /** ラベル未指定時にフォルダ名へフォールバックするか（#29）。既定 false。 */
+  provenanceFromFolder: boolean;
+  onProvenanceFromFolderChange: (value: boolean) => void;
   onScanMedia: () => void;
   isScanning: boolean;
   onProcessMedia: () => void;
@@ -81,6 +87,10 @@ export function MainLayout({
   onVideoRotationModeChange,
   excludeSystemArtifacts,
   onExcludeSystemArtifactsChange,
+  provenanceTag,
+  onProvenanceTagChange,
+  provenanceFromFolder,
+  onProvenanceFromFolderChange,
   onScanMedia,
   isScanning,
   onProcessMedia,
@@ -158,6 +168,10 @@ export function MainLayout({
               onVideoRotationModeChange={onVideoRotationModeChange}
               excludeSystemArtifacts={excludeSystemArtifacts}
               onExcludeSystemArtifactsChange={onExcludeSystemArtifactsChange}
+              provenanceTag={provenanceTag}
+              onProvenanceTagChange={onProvenanceTagChange}
+              provenanceFromFolder={provenanceFromFolder}
+              onProvenanceFromFolderChange={onProvenanceFromFolderChange}
             />
 
             {/* Action buttons — transport section */}

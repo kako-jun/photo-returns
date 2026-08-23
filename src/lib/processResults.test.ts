@@ -33,6 +33,7 @@ function media(path: string, over: Partial<MediaInfo> = {}): MediaInfo {
     file_size: 0,
     burst_group_id: null,
     burst_index: null,
+    resolved_provenance_tag: null,
     date_source: 'None',
     exif_orientation: null,
     rotation_applied: false,

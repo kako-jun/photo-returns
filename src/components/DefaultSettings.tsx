@@ -21,6 +21,14 @@ interface DefaultSettingsProps {
   /** システム生成物を scan_media で除外するかどうか。既定 true。 */
   excludeSystemArtifacts: boolean;
   onExcludeSystemArtifactsChange: (value: boolean) => void;
+
+  // 由来タグ設定 — photo/video のどちらのチャンネルにも属さない全体設定（#29）
+  /** 明示ラベル。空文字ならタグなし（フォルダ由来フォールバック次第）。 */
+  provenanceTag: string;
+  onProvenanceTagChange: (value: string) => void;
+  /** ラベル未指定時にフォルダ名へフォールバックするか。既定 false。 */
+  provenanceFromFolder: boolean;
+  onProvenanceFromFolderChange: (value: boolean) => void;
 }
 
 function SelectorRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -79,6 +87,10 @@ export function DefaultSettings({
   onVideoRotationModeChange,
   excludeSystemArtifacts,
   onExcludeSystemArtifactsChange,
+  provenanceTag,
+  onProvenanceTagChange,
+  provenanceFromFolder,
+  onProvenanceFromFolderChange,
 }: DefaultSettingsProps) {
   return (
     <div
@@ -118,6 +130,29 @@ export function DefaultSettings({
         >
           (.trashed-*, .thumbnails/, .nomedia, ._*, .DS_Store, Thumbs.db)
         </span>
+      </div>
+
+      {/* 由来タグ設定（#29）。写真/動画どちらのチャンネルにも属さない全体設定なので、
+          除外トグルと同様に2カラムグリッドの外に独立行として置く。 */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <label className="label-channel min-w-[72px]">PROVENANCE TAG</label>
+        <input
+          type="text"
+          value={provenanceTag}
+          onChange={(e) => onProvenanceTagChange(e.target.value)}
+          placeholder="e.g. takeout, line, pixel8"
+          className="input-recessed rounded px-2 py-1 text-xs"
+          style={{ width: '180px' }}
+        />
+        <label className="flex cursor-pointer items-center gap-2">
+          <input
+            type="checkbox"
+            checked={provenanceFromFolder}
+            onChange={(e) => onProvenanceFromFolderChange(e.target.checked)}
+            className="checkbox-hardware"
+          />
+          <span className="label-channel">USE FOLDER NAME IF LABEL EMPTY</span>
+        </label>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
