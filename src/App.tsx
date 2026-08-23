@@ -8,8 +8,14 @@ import {
   ExpandedState,
 } from '@tanstack/react-table';
 import './App.css';
-import { MOCK_ENABLED, mockMediaList, mockProcessResult } from './mock-data';
-import type { MediaInfo, ProcessResult, ProgressEvent } from './types';
+import { MOCK_ENABLED, mockMediaList, mockProcessResult, mockExcludedSummary } from './mock-data';
+import type {
+  MediaInfo,
+  ProcessResult,
+  ProgressEvent,
+  ScanOutcome,
+  ExcludedSummary,
+} from './types';
 import {
   mergeProcessResults,
   selectRetryTargets,
@@ -46,6 +52,10 @@ function App() {
   });
   const [processResult, setProcessResult] = useState<ProcessResult | null>(
     MOCK_ENABLED ? mockProcessResult : null
+  );
+  // scan_media で除外されたシステム生成物のサマリ（#28）。スキャンのたびに更新する。
+  const [excludedSummary, setExcludedSummary] = useState<ExcludedSummary | null>(
+    MOCK_ENABLED ? mockExcludedSummary : null
   );
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<ExpandedState>({});
@@ -177,14 +187,16 @@ function App() {
 
     setIsScanning(true);
     try {
-      const result = await invoke<MediaInfo[]>('scan_media', {
+      const { media, excluded } = await invoke<ScanOutcome>('scan_media', {
         inputDir,
         includeVideos: true,
         parallel: true,
+        excludeSystemArtifacts: true,
       });
+      setExcludedSummary(excluded);
 
       // 初期ステータスとデフォルト設定を適用（静止画と動画で分ける）
-      const mediaWithStatus = result.map((item: MediaInfo) => {
+      const mediaWithStatus = media.map((item: MediaInfo) => {
         const isPhoto = item.media_type === 'Photo';
         const preferredDateSource = isPhoto ? defaultPhotoDateSource : defaultVideoDateSource;
 
@@ -479,6 +491,7 @@ function App() {
         progressTotal={progress.total}
         mediaList={mediaList}
         processResult={processResult}
+        excludedSummary={excludedSummary}
         table={table}
         columns={columns}
         lightboxIndex={lightboxIndex}

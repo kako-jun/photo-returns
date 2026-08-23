@@ -163,6 +163,27 @@
   確定で該当 item の `rotation_mode` を絶対角に更新→既存ロスレス回転が適用。既存 dropdown/Before-After は不変
 - backend は不変（フロントのみ）。**回転方向の左右の符号は GUI 実機での目視が要る唯一の点**（逆なら ←/→ の +90/−90 を入替）
 
+### Phase 9: システム生成物の自動除外（#28）✅
+- Android/Google フォトの削除済み（`.trashed-*`）をそのまま取り込むと、削除済み写真が
+  永久アーカイブに復活してしまう問題への対応。`.thumbnails` / `.nomedia` / AppleDouble
+  （`._*`）/ OS メタデータ（`.DS_Store` / `Thumbs.db`）も同様に既定で除外する
+- `ProcessOptions.exclude_system_artifacts: bool`（既定 `true`）。`scan_media` の入口
+  （拡張子判定・EXIF読み・日付抽出・バースト検出より前）で判定するため、除外分は
+  `MediaInfo` を作らずバースト検出のインデックスにも混ざらない
+- 判定は `photo_core/exclude.rs` の純粋関数 `classify_excluded`（入力ディレクトリからの
+  相対パスを受ける）と `partition`（WalkDir エントリを kept/excluded に振り分け、
+  ルール別件数とサンプルパス20件を集計）
+- `scan_media` の戻り値は `ScanOutcome { media: Vec<MediaInfo>, excluded: ExcludedSummary }`
+  に変更（`MediaInfo` 自体の wire 契約は不変）。`ExcludedSummary { total, by_rule, samples }`
+- フロントはスキャン結果パネルに除外が1件以上のときだけ「EXCLUDED: N」を表示し、押すと
+  `LogViewer` を再利用してルール別内訳＋サンプルパスを見られる（`lib/excludedSummary.ts`
+  が `ExcludedSummary` → `LogEntry[]` に写像）
+- CLI (`cli.rs`) は既定で除外、`--include-system-artifacts` を渡すと従来どおり全部拾う
+- テスト: `exclude.rs` 内のルール別判定表（vitest 相当の cargo test）＋
+  `tests/e2e_golden.rs` の `e2e_exclude_system_artifacts_default_on` /
+  `e2e_exclude_system_artifacts_disabled_includes_trashed`（ゴミ混じりフィクスチャで
+  scan→process の出力に混入しないこと・`ExcludedSummary` の件数を機械検証）
+
 ## 主要機能
 
 ### 自動実行される操作
