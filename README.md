@@ -159,12 +159,13 @@ output/
 - `parallel: true` - マルチスレッド処理
 - `include_videos: true` - 動画ファイルも処理
 - `cleanup_temp: true` - 一時ファイル削除
-- `auto_correct_orientation: true` - 画像回転修正
 - `exclude_system_artifacts: true` - システム生成物を除外（Android 削除済み `.trashed-*`、`.thumbnails` 配下、`.nomedia`、AppleDouble `._*`、OS メタデータ `.DS_Store`/`Thumbs.db`）。既定 ON なのは、削除したはずの写真が誤って取り込まれ永久アーカイブに復活する事故を防ぐため
 
 デフォルトで無効（明示的に設定した場合のみ有効）:
 - `provenance_tag: None` - 由来タグの明示ラベル。設定パネルの「PROVENANCE TAG」欄、または CLI の `--tag <LABEL>` で指定
 - `provenance_from_folder: false` - ラベル未指定時にフォルダ名を由来タグとして使うフォールバック。設定パネルの「USE FOLDER NAME IF LABEL EMPTY」トグル、または CLI の `--tag-from-folder` で有効化
+
+なお `ProcessOptions` には `auto_correct_orientation` フィールドが残っているが、**現在はどの経路からも `false` 固定で使われていない**。回転補正はファイルごとの `rotation_mode`（既定 `exif`）で制御される。
 
 ## 関連ツール
 
